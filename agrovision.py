@@ -533,4 +533,4 @@ with tab_analytics:
 
     if st.session_state.history:
         good_count = sum(1 for i in st.session_state.history if i["result"] == "GOOD")
-        bad_count  = sum(1 for i in st.session_state.history if i["result"] == "BAD
+        bad_count  = sum(1 for i in st.session_state.history if i["result"] == "BAD")

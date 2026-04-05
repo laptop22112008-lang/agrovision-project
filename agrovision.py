@@ -7,10 +7,6 @@ from matplotlib.colors import rgb_to_hsv
 from datetime import datetime
 import io
 import hashlib
-import time
-
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet
 
 # ─────────────────────────────────────────
 # CONFIG
@@ -19,235 +15,134 @@ st.set_page_config(
     page_title="AgroVision AI",
     page_icon="🌿",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="collapsed"
 )
 
 # ─────────────────────────────────────────
 # CUSTOM CSS
 # ─────────────────────────────────────────
-st.markdown(
-    """
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    background: linear-gradient(180deg, #071018 0%, #0c1722 100%);
-}
+html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+.block-container { padding-top: 1.5rem; }
 
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
-    max-width: 1280px;
-}
-
-h1, h2, h3, h4, h5 {
-    font-family: 'Sora', sans-serif;
-    color: #eef6ff;
-}
-
-p, li, label, .stMarkdown, .stText, .stCaption {
-    color: #d5e3f0;
-}
-
+/* Box tab navigation */
 div[data-baseweb="tab-list"] {
-    gap: 8px;
-    background: transparent;
-    border-bottom: none !important;
-    flex-wrap: wrap;
+    gap: 8px; background: transparent;
+    border-bottom: none !important; flex-wrap: wrap;
 }
 div[data-baseweb="tab"] {
-    background: #1e2d1f;
-    border: 1.5px solid #2e4d30;
-    border-radius: 10px !important;
-    padding: 10px 22px !important;
-    font-family: 'Sora', sans-serif;
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: #a5c9a7 !important;
-    transition: all 0.2s ease;
-    white-space: nowrap;
+    background: #1e2d1f; border: 1.5px solid #2e4d30;
+    border-radius: 10px !important; padding: 10px 22px !important;
+    font-family: 'Sora', sans-serif; font-size: 0.88rem;
+    font-weight: 600; color: #a5c9a7 !important;
+    transition: all 0.2s ease; white-space: nowrap;
 }
 div[data-baseweb="tab"]:hover {
-    background: #2a4a2c;
-    border-color: #4caf50;
-    color: #fff !important;
+    background: #2a4a2c; border-color: #4caf50; color: #fff !important;
 }
 div[data-baseweb="tab"][aria-selected="true"] {
     background: linear-gradient(135deg, #2e7d32, #43a047) !important;
-    border-color: #66bb6a !important;
-    color: #fff !important;
+    border-color: #66bb6a !important; color: #fff !important;
     box-shadow: 0 4px 14px rgba(76,175,80,0.35);
 }
-div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] {
-    display: none !important;
-}
+div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none !important; }
 
+/* Cards */
 .agro-card {
-    background: #1a2b1c;
-    border: 1px solid #2d4a2f;
-    border-radius: 14px;
-    padding: 1.4rem 1.6rem;
-    margin-bottom: 1rem;
+    background: #1a2b1c; border: 1px solid #2d4a2f;
+    border-radius: 14px; padding: 1.4rem 1.6rem; margin-bottom: 1rem;
 }
 
+/* Hero */
 .hero-title {
-    font-family: 'Sora', sans-serif;
-    font-size: clamp(1.8rem, 4.2vw, 2.6rem);
-    font-weight: 700;
-    color: #e8f5e9;
-    text-align: center;
-    letter-spacing: -0.5px;
-    margin-bottom: 0;
-    line-height: 1.1;
-    word-break: break-word;
-    padding: 0 0.6rem;
+    font-family: 'Sora', sans-serif; font-size: clamp(1.8rem, 4.2vw, 2.6rem); font-weight: 700;
+    color: #e8f5e9; text-align: center; letter-spacing: -0.5px;
+    margin-bottom: 0; line-height: 1.1; word-break: break-word; padding: 0 0.6rem;
 }
 .hero-sub {
-    font-size: 1rem;
-    color: #81c784;
-    text-align: center;
-    margin-top: 4px;
-    margin-bottom: 1.6rem;
-    padding: 0 0.6rem;
+    font-size: 1rem; color: #81c784; text-align: center;
+    margin-top: 4px; margin-bottom: 1.6rem; padding: 0 0.6rem;
 }
 
+/* Result badges */
 .badge-good {
-    display: inline-block;
-    background: #1b5e20;
-    border: 1.5px solid #43a047;
-    color: #a5d6a7;
-    border-radius: 8px;
-    padding: 6px 18px;
-    font-weight: 700;
-    font-family: 'Sora', sans-serif;
-    font-size: 1.1rem;
+    display: inline-block; background: #1b5e20; border: 1.5px solid #43a047;
+    color: #a5d6a7; border-radius: 8px; padding: 6px 18px;
+    font-weight: 700; font-family: 'Sora', sans-serif; font-size: 1.1rem;
 }
 .badge-bad {
-    display: inline-block;
-    background: #5e1b1b;
-    border: 1.5px solid #e53935;
-    color: #ef9a9a;
-    border-radius: 8px;
-    padding: 6px 18px;
-    font-weight: 700;
-    font-family: 'Sora', sans-serif;
-    font-size: 1.1rem;
+    display: inline-block; background: #5e1b1b; border: 1.5px solid #e53935;
+    color: #ef9a9a; border-radius: 8px; padding: 6px 18px;
+    font-weight: 700; font-family: 'Sora', sans-serif; font-size: 1.1rem;
 }
 
+/* Severity badges */
 .sev-low {
-    display: inline-block;
-    background: #1b3a1f;
-    border: 1.5px solid #43a047;
-    color: #a5d6a7;
-    border-radius: 20px;
-    padding: 4px 16px;
-    font-weight: 600;
-    font-family: 'Sora', sans-serif;
-    font-size: 0.85rem;
+    display: inline-block; background: #1b3a1f; border: 1.5px solid #43a047;
+    color: #a5d6a7; border-radius: 20px; padding: 4px 16px;
+    font-weight: 600; font-family: 'Sora', sans-serif; font-size: 0.85rem;
 }
 .sev-medium {
-    display: inline-block;
-    background: #3e2a00;
-    border: 1.5px solid #ffa726;
-    color: #ffcc80;
-    border-radius: 20px;
-    padding: 4px 16px;
-    font-weight: 600;
-    font-family: 'Sora', sans-serif;
-    font-size: 0.85rem;
+    display: inline-block; background: #3e2a00; border: 1.5px solid #ffa726;
+    color: #ffcc80; border-radius: 20px; padding: 4px 16px;
+    font-weight: 600; font-family: 'Sora', sans-serif; font-size: 0.85rem;
 }
 .sev-high {
-    display: inline-block;
-    background: #5e1b1b;
-    border: 1.5px solid #ef5350;
-    color: #ef9a9a;
-    border-radius: 20px;
-    padding: 4px 16px;
-    font-weight: 600;
-    font-family: 'Sora', sans-serif;
-    font-size: 0.85rem;
+    display: inline-block; background: #5e1b1b; border: 1.5px solid #ef5350;
+    color: #ef9a9a; border-radius: 20px; padding: 4px 16px;
+    font-weight: 600; font-family: 'Sora', sans-serif; font-size: 0.85rem;
 }
 
+/* Treatment cards */
 .treatment-card {
-    background: #0f2211;
-    border: 1px solid #2d6a35;
+    background: #0f2211; border: 1px solid #2d6a35;
     border-left: 4px solid #43a047;
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    margin-top: 0.6rem;
+    border-radius: 10px; padding: 1rem 1.2rem; margin-top: 0.6rem;
 }
 .treatment-card.warn {
-    background: #1e1400;
-    border: 1px solid #6d4c00;
+    background: #1e1400; border: 1px solid #6d4c00;
     border-left: 4px solid #ffa726;
 }
 .treatment-card.danger {
-    background: #1e0a0a;
-    border: 1px solid #6d1212;
+    background: #1e0a0a; border: 1px solid #6d1212;
     border-left: 4px solid #ef5350;
 }
 
+/* Metric tiles */
 .metric-box {
-    background: #1a2b1c;
-    border: 1px solid #2d4a2f;
-    border-radius: 12px;
-    padding: 1rem;
-    text-align: center;
+    background: #1a2b1c; border: 1px solid #2d4a2f;
+    border-radius: 12px; padding: 1rem; text-align: center;
 }
-.metric-num {
-    font-family: 'Sora', sans-serif;
-    font-size: 2rem;
-    font-weight: 700;
-    color: #a5d6a7;
-}
-.metric-label {
-    font-size: 0.8rem;
-    color: #81c784;
-    margin-top: 2px;
-}
+.metric-num { font-family: 'Sora', sans-serif; font-size: 2rem; font-weight: 700; color: #a5d6a7; }
+.metric-label { font-size: 0.8rem; color: #81c784; margin-top: 2px; }
 
-.ts-tag {
-    font-size: 0.75rem;
-    color: #558b57;
-    font-style: italic;
-}
+/* Timestamp */
+.ts-tag { font-size: 0.75rem; color: #558b57; font-style: italic; }
 
+/* Global overrides */
 body { background-color: #0f1a10; color: #e0e0e0; }
 h1, h2, h3 { font-family: 'Sora', sans-serif; color: #e8f5e9; }
-
-.stButton > button {
+.stButton>button {
     background: linear-gradient(135deg, #2e7d32, #43a047);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.5rem 1.4rem;
-    font-family: 'Sora', sans-serif;
-    font-weight: 600;
-    transition: 0.2s;
+    color: white; border: none; border-radius: 8px;
+    padding: 0.5rem 1.4rem; font-family: 'Sora', sans-serif;
+    font-weight: 600; transition: 0.2s;
 }
-.stButton > button:hover {
+.stButton>button:hover {
     background: linear-gradient(135deg, #388e3c, #66bb6a);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(76,175,80,0.4);
+    transform: translateY(-1px); box-shadow: 0 4px 12px rgba(76,175,80,0.4);
 }
-
-.stTextInput > div > div > input {
-    background: #1a2b1c;
-    border: 1px solid #2d4a2f;
-    color: #e0e0e0;
-    border-radius: 8px;
+.stTextInput>div>div>input {
+    background: #1a2b1c; border: 1px solid #2d4a2f;
+    color: #e0e0e0; border-radius: 8px;
 }
-.stFileUploader {
-    background: #1a2b1c;
-    border: 1.5px dashed #2d4a2f;
-    border-radius: 12px;
-}
+.stFileUploader { background: #1a2b1c; border: 1.5px dashed #2d4a2f; border-radius: 12px; }
 div[data-testid="stAlert"] { border-radius: 10px; }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
 # SESSION STATE
@@ -359,10 +254,16 @@ def get_severity(result: str, confidence: float, condition: str):
 
 
 def analyze_leaf(image: Image.Image):
+    """
+    Stable leaf analysis using HSV:
+    - reduces background noise
+    - separates green / yellow / brown tones
+    - returns stable pie values
+    """
     img = np.array(image.convert("RGB")).astype(np.float32)
-
     rgb_norm = img / 255.0
     hsv = rgb_to_hsv(rgb_norm)
+
     h = hsv[:, :, 0] * 360.0
     s = hsv[:, :, 1]
     v = hsv[:, :, 2]
@@ -470,64 +371,6 @@ def make_pie_figure(values, colors, labels):
     return fig
 
 
-def figure_to_bytes(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-
-def build_report_story(item, styles):
-    story = []
-    story.append(Paragraph(f"<b>{item['name']}</b>", styles["Title"]))
-    story.append(Spacer(1, 10))
-    story.append(Paragraph(f"Result: {item['result']}", styles["Normal"]))
-    story.append(Paragraph(f"Confidence: {item['confidence']}%", styles["Normal"]))
-    story.append(Paragraph(f"Condition: {item['condition']}", styles["Normal"]))
-    story.append(Paragraph(f"Timestamp: {item.get('timestamp', '—')}", styles["Normal"]))
-    story.append(Spacer(1, 10))
-
-    img_buf = io.BytesIO(item["image_bytes"])
-    img_buf.seek(0)
-    story.append(RLImage(img_buf, width=200, height=200))
-    story.append(Spacer(1, 10))
-
-    pie_fig = make_pie_figure(
-        item["pie_values"],
-        ["#4caf50", "#ffca28", "#8d6e63"],
-        ["Green", "Yellow", "Brown"],
-    )
-    pie_buf = figure_to_bytes(pie_fig)
-    story.append(RLImage(pie_buf, width=200, height=200))
-    return story
-
-
-def build_pdf_bytes(item):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
-    styles = getSampleStyleSheet()
-    doc.build(build_report_story(item, styles))
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
-def build_all_pdf_bytes(history):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
-    styles = getSampleStyleSheet()
-    story = []
-
-    for idx, item in enumerate(history):
-        story.extend(build_report_story(item, styles))
-        if idx < len(history) - 1:
-            story.append(PageBreak())
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
 # ─────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────
@@ -551,7 +394,7 @@ with tab_dashboard:
         "Input source",
         ["📁 Upload Image", "📷 Use Camera"],
         horizontal=True,
-        label_visibility="collapsed",
+        label_visibility="collapsed"
     )
 
     image = None
@@ -746,11 +589,11 @@ with tab_analytics:
             ax3.legend(
                 handles=[
                     mpatches.Patch(color="#4caf50", label="GOOD"),
-                    mpatches.Patch(color="#ef5350", label="BAD"),
+                    mpatches.Patch(color="#ef5350", label="BAD")
                 ],
                 facecolor="#1a2b1c",
                 labelcolor="white",
-                edgecolor="#2d4a2f",
+                edgecolor="#2d4a2f"
             )
             st.pyplot(fig3)
             plt.close(fig3)
@@ -803,7 +646,7 @@ with tab_history:
             st.session_state.saved_hashes = []
             st.rerun()
 
-        for idx, item in enumerate(st.session_state.history, 1):
+        for idx, item in enumerate(reversed(st.session_state.history), 1):
             badge = "badge-good" if item["result"] == "GOOD" else "badge-bad"
             icon = "✅" if item["result"] == "GOOD" else "⚠️"
             sev = item.get("severity", "")
@@ -816,8 +659,7 @@ with tab_history:
             )
             card_class = f"treatment-card {t_data['card_class']}".strip()
 
-            st.markdown(
-                f"""
+            st.markdown(f"""
             <div class='agro-card'>
                 <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px'>
                     <b style='font-size:1rem;font-family:Sora,sans-serif;color:#e8f5e9'>
@@ -847,26 +689,7 @@ with tab_history:
                     </div>
                 </details>
             </div>
-            """,
-                unsafe_allow_html=True,
-            )
-
-            pdf_bytes = build_pdf_bytes(item)
-            st.download_button(
-                "Download Report",
-                pdf_bytes,
-                file_name=f"{item['name']}.pdf",
-                key=f"download_{idx}",
-            )
-
-        st.markdown("---")
-
-        all_pdf = build_all_pdf_bytes(st.session_state.history)
-        st.download_button(
-            "Download All Reports",
-            all_pdf,
-            file_name="All_Leaf_Reports.pdf",
-        )
+            """, unsafe_allow_html=True)
     else:
         st.info("No history yet. Save scans from the Dashboard tab.")
 
@@ -875,11 +698,10 @@ with tab_history:
 # ══════════════════════════════════════════
 with tab_about:
     st.markdown("#### ℹ️ About AgroVision AI")
-    col_a, col_b = st.columns(2, gap="large")
+    left_col, right_col = st.columns(2, gap="large")
 
-    with col_a:
-        st.markdown(
-            """
+    with left_col:
+        st.markdown("""
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🌿 What It Does</h4>
             AgroVision AI analyses leaf images using colour-ratio intelligence to instantly
@@ -895,13 +717,10 @@ with tab_about:
             • 📅 Timestamped scan history<br>
             • Analytics with severity breakdown chart
         </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        """, unsafe_allow_html=True)
 
-    with col_b:
-        st.markdown(
-            """
+    with right_col:
+        st.markdown("""
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🔬 How It Works</h4>
             The model converts the image to HSV space and filters out background noise. It then
@@ -916,6 +735,4 @@ with tab_about:
             • Mobile app (Android / iOS)<br>
             • Geo-tagged field reports & crop mapping
         </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        """, unsafe_allow_html=True)

@@ -1,23 +1,50 @@
 import streamlit as st
 from PIL import Image
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
-# ---------------- PAGE CONFIG ----------------
+# ---------------- CONFIG ----------------
 st.set_page_config(page_title="AgroVision", layout="wide")
 
-# ---------------- SIDEBAR ----------------
-st.markdown("""
-<style>
-.sidebar .sidebar-content {
-    background: #0f172a;
-}
-</style>
-""", unsafe_allow_html=True)
+# ---------------- NAVIGATION (TOP) ----------------
+page = st.radio(
+    "",
+    ["🏠 Dashboard", "📊 Analytics", "📁 History", "ℹ️ About"],
+    horizontal=True
+)
 
-st.sidebar.title("🌿 AgroVision")
+# ---------------- SESSION ----------------
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-page = st.sidebar.radio("", ["🏠 Dashboard", "📊 Analytics", "📁 History", "ℹ️ About"])
+# ---------------- MODEL (STABLE LOGIC) ----------------
+def analyze_leaf(image):
+    img = np.array(image)
+
+    r = np.mean(img[:, :, 0])
+    g = np.mean(img[:, :, 1])
+    b = np.mean(img[:, :, 2])
+
+    total = r + g + b + 1
+
+    green_ratio = g / total
+    red_ratio = r / total
+
+    # Balanced decision (not too strict)
+    if green_ratio > 0.38:
+        result = "GOOD"
+        condition = "Healthy Leaf"
+        confidence = round(green_ratio * 100, 2)
+    elif red_ratio > 0.34:
+        result = "BAD"
+        condition = "Disease Detected"
+        confidence = round(red_ratio * 100, 2)
+    else:
+        result = "BAD"
+        condition = "Nutrient Deficiency"
+        confidence = round((red_ratio + (1-green_ratio)) * 50, 2)
+
+    return result, confidence, condition, [g, r, b]
 
 # ---------------- DASHBOARD ----------------
 if page == "🏠 Dashboard":
@@ -27,76 +54,80 @@ if page == "🏠 Dashboard":
 
     st.write("")
 
-    col1, col2 = st.columns([1,1])
+    uploaded_file = st.file_uploader("📤 Upload Leaf Image", type=["jpg", "png", "jpeg"])
 
-    # -------- UPLOAD CARD --------
-    with col1:
-        st.markdown("### 📤 Upload Leaf Image")
-        uploaded_file = st.file_uploader("Upload image", type=["jpg","png","jpeg"])
+    # ❗ ONLY SHOW RESULT AFTER UPLOAD
+    if uploaded_file:
+        image = Image.open(uploaded_file)
 
-        if uploaded_file:
-            image = Image.open(uploaded_file)
+        col1, col2 = st.columns([1,1])
+
+        with col1:
             st.image(image, use_column_width=True)
 
-    # -------- RESULT CARD --------
-    with col2:
-        st.markdown("### 📊 Result Overview")
+        with col2:
+            result, confidence, condition, values = analyze_leaf(image)
 
-        st.info("Upload image to see analysis")
+            # -------- RESULT BOX --------
+            if result == "GOOD":
+                st.success(f"Result: {result}")
+            else:
+                st.error(f"Result: {result}")
 
-    st.write("---")
+            st.write(f"Confidence: {confidence}%")
+            st.write(f"Condition: {condition}")
 
-    # -------- STATS CARDS --------
-    col3, col4, col5 = st.columns(3)
+        st.write("---")
 
-    with col3:
-        st.metric("🌱 Health Score", "85%", "+5%")
+        # -------- PIE CHART --------
+        st.markdown("### 📊 Leaf Composition")
 
-    with col4:
-        st.metric("⚠️ Risk Level", "Low")
+        fig, ax = plt.subplots()
+        labels = ["Green", "Red", "Blue"]
+        ax.pie(values, labels=labels, autopct='%1.1f%%')
+        st.pyplot(fig)
 
-    with col5:
-        st.metric("📈 Growth Status", "Stable")
+        # -------- SAVE --------
+        name = st.text_input("Enter Leaf Name")
 
-    st.write("---")
-
-    # -------- CHART SECTION --------
-    st.markdown("### 📊 Leaf Composition")
-
-    fig, ax = plt.subplots()
-
-    labels = ["Green", "Yellow", "Brown"]
-    values = [60, 25, 15]
-
-    ax.pie(values, labels=labels, autopct='%1.1f%%')
-    st.pyplot(fig)
+        if st.button("💾 Save to History"):
+            st.session_state.history.append({
+                "name": name,
+                "result": result,
+                "confidence": confidence,
+                "condition": condition
+            })
+            st.success("Saved!")
 
 # ---------------- ANALYTICS ----------------
 elif page == "📊 Analytics":
 
-    st.title("📊 Analytics Dashboard")
+    st.title("📊 Analytics")
 
-    st.markdown("### Overall Performance")
+    if st.session_state.history:
+        good = sum(1 for i in st.session_state.history if i["result"] == "GOOD")
+        bad = sum(1 for i in st.session_state.history if i["result"] == "BAD")
 
-    fig, ax = plt.subplots()
-
-    labels = ["Healthy", "Diseased"]
-    values = [70, 30]
-
-    ax.bar(labels, values)
-    st.pyplot(fig)
-
-    st.markdown("### Trend Analysis")
-
-    data = np.random.randint(50, 100, 10)
-    st.line_chart(data)
+        fig, ax = plt.subplots()
+        ax.pie([good, bad], labels=["GOOD", "BAD"], autopct='%1.1f%%')
+        st.pyplot(fig)
+    else:
+        st.info("No data yet")
 
 # ---------------- HISTORY ----------------
 elif page == "📁 History":
 
-    st.title("📁 Analysis History")
+    st.title("📁 History")
 
-    st.info("No records yet")
+    if st.session_state.history:
+        for item in st.session_state.history:
+            st.write("---")
+            st.write(f"Name: {item['name']}")
+            st.write(f"Result: {item['result']}")
+            st.write(f"Confidence: {item['confidence']}%")
+            st.write(f"Condition: {item['condition']}")
+    else:
+        st.info("No history yet")
 
 # ---------------- ABOUT ----------------
 elif page == "ℹ️ About":
@@ -106,23 +137,21 @@ elif page == "ℹ️ About":
     st.markdown("""
     ### 🌿 AgroVision
 
-    AgroVision is an advanced plant analysis system designed to:
-    
-    - Detect plant health conditions
-    - Analyze leaf composition
-    - Provide smart insights
-    - Track plant history
-    
+    - Smart plant health detection system  
+    - Uses image-based analysis  
+    - Provides real-time results  
+    - Tracks history and analytics  
+
     ### 🚀 Features
-    
-    - Smart image analysis
-    - Clean dashboard UI
-    - Real-time insights
-    - Analytics visualization
-    
-    ### 💡 Future Scope
-    
-    - AI-powered disease detection
-    - Weather integration
-    - Smart recommendations
+
+    - Leaf health detection  
+    - Analytics dashboard  
+    - Clean UI  
+    - Fast processing  
+
+    ### 🔮 Future Scope
+
+    - AI model (CNN)  
+    - Disease classification  
+    - Weather integration  
     """)

@@ -3,6 +3,7 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.colors import rgb_to_hsv
 from datetime import datetime
 
 # ─────────────────────────────────────────
@@ -155,10 +156,21 @@ TREATMENTS = {
         "icon": "✅",
         "title": "Plant is healthy — maintain current care",
         "tips": [
-            "Continue regular watering schedule",
+            "Continue the regular watering schedule",
             "Apply balanced NPK fertiliser monthly",
             "Monitor for early signs of pests or discolouration",
             "Ensure adequate sunlight and airflow between plants",
+        ]
+    },
+    "Mostly Healthy": {
+        "card_class": "",
+        "icon": "🟢",
+        "title": "Mostly healthy — only minor stress detected",
+        "tips": [
+            "Inspect the plant again in 3–5 days",
+            "Check if the leaf is getting too much direct sun",
+            "Avoid overwatering and keep soil moisture stable",
+            "Remove only clearly damaged parts if needed",
         ]
     },
     "Disease Detected": {
@@ -184,6 +196,18 @@ TREATMENTS = {
             "Consider a slow-release fertiliser with balanced N-P-K",
             "Avoid over-watering which leaches nutrients from the soil",
         ]
+    },
+    "Mixed Stress": {
+        "card_class": "warn",
+        "icon": "⚠️",
+        "title": "Mixed stress detected — monitor carefully",
+        "tips": [
+            "Check watering consistency first",
+            "Inspect for pests, fungal spots, and leaf curling",
+            "Reduce heat stress with partial shade if needed",
+            "Re-scan the leaf under natural light for confirmation",
+            "If symptoms spread, isolate the plant from others",
+        ]
     }
 }
 
@@ -191,34 +215,118 @@ TREATMENTS = {
 #  HELPERS
 # ─────────────────────────────────────────
 
-def get_severity(result: str, confidence: float):
+def safe_pie_values(values):
+    arr = np.array(values, dtype=float)
+    if np.sum(arr) <= 0:
+        return [34.0, 33.0, 33.0]
+    arr = np.maximum(arr, 0.5)
+    arr = arr / np.sum(arr) * 100.0
+    return arr.tolist()
+
+
+def get_severity(result: str, confidence: float, condition: str):
     if result == "GOOD":
-        return "🟢 Low Risk", "sev-low"
-    if confidence >= 55:
+        if confidence >= 86:
+            return "🟢 Low Risk", "sev-low"
+        return "🟡 Monitor", "sev-medium"
+
+    if condition == "Disease Detected" or confidence >= 82:
         return "🔴 High Risk", "sev-high"
-    return "🟡 Medium Risk", "sev-medium"
+    if confidence >= 68:
+        return "🟠 Medium Risk", "sev-medium"
+    return "🟡 Low Risk", "sev-low"
 
 
 def analyze_leaf(image: Image.Image):
-    img = np.array(image.convert("RGB"))
-    r = float(np.mean(img[:, :, 0]))
-    g = float(np.mean(img[:, :, 1]))
-    b = float(np.mean(img[:, :, 2]))
-    total = r + g + b + 1e-6
-    green_ratio = g / total
-    red_ratio   = r / total
+    """
+    Stable leaf analysis:
+    - uses HSV to reduce background/blue noise
+    - separates green/yellow/brown leaf tones
+    - returns safe pie values and a condition-specific result
+    """
+    img = np.array(image.convert("RGB")).astype(np.float32)
 
-    if green_ratio > 0.38:
-        result, condition = "GOOD", "Healthy Leaf"
-        confidence = round(min(green_ratio * 100, 99.9), 2)
-    elif red_ratio > 0.34:
-        result, condition = "BAD", "Disease Detected"
-        confidence = round(min(red_ratio * 100, 99.9), 2)
+    # Normalize to 0..1 for HSV conversion
+    rgb_norm = img / 255.0
+    hsv = rgb_to_hsv(rgb_norm)
+    h = hsv[:, :, 0] * 360.0
+    s = hsv[:, :, 1]
+    v = hsv[:, :, 2]
+
+    # Candidate pixels: avoid blue-ish background, require enough saturation/value
+    candidate = (s > 0.12) & (v > 0.18) & ((h <= 120) | (h >= 335))
+
+    # Relax mask if image is too dark or the leaf is faint
+    if candidate.mean() < 0.03:
+        candidate = (s > 0.08) & (v > 0.15) & ((h <= 130) | (h >= 330))
+
+    # Final fallback: allow all pixels (keeps app working on odd images)
+    if candidate.mean() < 0.02:
+        candidate = np.ones_like(h, dtype=bool)
+
+    # Classify leaf pixels by tone
+    green_mask = candidate & (h >= 60) & (h <= 160) & (s > 0.18)
+    yellow_mask = candidate & (h >= 22) & (h < 60) & (s > 0.15)
+    brown_mask = candidate & (
+        (((h < 22) | (h >= 335)) & (v < 0.90)) |
+        ((s < 0.32) & (v < 0.75))
+    )
+
+    green_count = int(green_mask.sum())
+    yellow_count = int(yellow_mask.sum())
+    brown_count = int(brown_mask.sum())
+    candidate_count = int(candidate.sum())
+
+    # Any remaining leaf-like pixels go to "healthy-ish" so the chart stays stable
+    unclassified = max(candidate_count - green_count - yellow_count - brown_count, 0)
+
+    green_score = green_count + 0.55 * unclassified
+    yellow_score = yellow_count + 0.25 * unclassified
+    brown_score = brown_count + 0.20 * unclassified
+
+    scores = np.array([green_score, yellow_score, brown_score], dtype=float)
+    pie_values = safe_pie_values(scores)
+
+    total_score = scores.sum()
+    if total_score <= 0:
+        green_ratio = yellow_ratio = brown_ratio = 1 / 3
     else:
-        result, condition = "BAD", "Nutrient Deficiency"
-        confidence = round(min((red_ratio + (1 - green_ratio)) * 50, 99.9), 2)
+        green_ratio = float(scores[0] / total_score)
+        yellow_ratio = float(scores[1] / total_score)
+        brown_ratio = float(scores[2] / total_score)
 
-    return result, confidence, condition, [g, r, b]
+    # Brightness support to reduce false positives from shadows
+    brightness = float(np.mean(v[candidate])) if candidate.any() else float(np.mean(v))
+
+    # Decision logic
+    if green_ratio >= 0.62 and brown_ratio < 0.08 and yellow_ratio < 0.18:
+        result = "GOOD"
+        condition = "Healthy Leaf"
+        confidence = 72 + 18 * green_ratio + 10 * brightness + 18 * (green_ratio - max(yellow_ratio, brown_ratio))
+    elif brown_ratio >= 0.22:
+        result = "BAD"
+        condition = "Disease Detected"
+        confidence = 65 + 25 * brown_ratio + 10 * (brown_ratio - green_ratio) + 5 * (1 - brightness)
+    elif yellow_ratio >= 0.22:
+        result = "BAD"
+        condition = "Nutrient Deficiency"
+        confidence = 62 + 25 * yellow_ratio + 12 * (yellow_ratio - green_ratio) + 5 * (1 - brightness)
+    elif green_ratio >= 0.48:
+        result = "GOOD"
+        condition = "Mostly Healthy"
+        confidence = 68 + 20 * green_ratio + 8 * (green_ratio - max(yellow_ratio, brown_ratio)) + 6 * brightness
+    else:
+        result = "BAD"
+        condition = "Mixed Stress"
+        confidence = 58 + 20 * max(yellow_ratio, brown_ratio) + 8 * (max(yellow_ratio, brown_ratio) - green_ratio) + 4 * (1 - brightness)
+
+    confidence = round(float(np.clip(confidence, 50.0, 99.9)), 2)
+    return result, confidence, condition, pie_values
+
+
+def treatment_for_condition(condition: str):
+    return TREATMENTS.get(condition, TREATMENTS["Mixed Stress"])
+
 
 # ─────────────────────────────────────────
 #  HEADER
@@ -237,19 +345,18 @@ tab_dashboard, tab_analytics, tab_history, tab_about = st.tabs(
 #  TAB 1 – DASHBOARD
 # ══════════════════════════════════════════
 with tab_dashboard:
-    st.markdown("#### Scan a leaf to detect plant health")
+    st.markdown("#### 🔎 Scan a leaf to detect plant health")
 
-    # ── Input toggle: Upload vs Camera ──
     source = st.radio(
-        "Input source", ["📁 Upload Image", "📷 Use Camera"],
-        horizontal=True, label_visibility="collapsed"
+        "Input source",
+        ["📁 Upload Image", "📷 Use Camera"],
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
     image = None
     if source == "📁 Upload Image":
-        f = st.file_uploader(
-            "Upload", type=["jpg", "jpeg", "png"], label_visibility="collapsed"
-        )
+        f = st.file_uploader("Upload", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
         if f:
             image = Image.open(f)
     else:
@@ -258,8 +365,9 @@ with tab_dashboard:
             image = Image.open(cam)
 
     if image:
-        result, confidence, condition, rgb_values = analyze_leaf(image)
-        severity_label, severity_class = get_severity(result, confidence)
+        result, confidence, condition, pie_values = analyze_leaf(image)
+        severity_label, severity_class = get_severity(result, confidence, condition)
+        t = treatment_for_condition(condition)
 
         col_img, col_result = st.columns([1, 1], gap="large")
 
@@ -277,37 +385,35 @@ with tab_dashboard:
                 unsafe_allow_html=True
             )
             st.write("")
-
             st.markdown(f"**Condition:** {condition}")
             st.progress(min(int(confidence), 100))
             st.caption(f"Confidence: **{confidence}%**")
-            st.write("")
 
-            g_val, r_val, b_val = rgb_values
-            total_rgb = g_val + r_val + b_val + 1e-6
-            c1, c2, c3 = st.columns(3)
-            c1.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{g_val/total_rgb*100:.0f}%</div>"
-                f"<div class='metric-label'>Green</div></div>", unsafe_allow_html=True
+            st.write("")
+            p1, p2, p3 = st.columns(3)
+            p1.markdown(
+                f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{pie_values[0]:.0f}%</div>"
+                f"<div class='metric-label'>Healthy Tissue</div></div>",
+                unsafe_allow_html=True
             )
-            c2.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{r_val/total_rgb*100:.0f}%</div>"
-                f"<div class='metric-label'>Red</div></div>", unsafe_allow_html=True
+            p2.markdown(
+                f"<div class='metric-box'><div class='metric-num' style='color:#ffcc80'>{pie_values[1]:.0f}%</div>"
+                f"<div class='metric-label'>Warning Tissue</div></div>",
+                unsafe_allow_html=True
             )
-            c3.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#90caf9'>{b_val/total_rgb*100:.0f}%</div>"
-                f"<div class='metric-label'>Blue</div></div>", unsafe_allow_html=True
+            p3.markdown(
+                f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{pie_values[2]:.0f}%</div>"
+                f"<div class='metric-label'>Damaged Tissue</div></div>",
+                unsafe_allow_html=True
             )
 
         st.write("---")
 
-        # ── 💡 Treatment Suggestions ──
-        t = TREATMENTS[condition]
-        tips_html = "".join(
-            f"<li style='margin-bottom:6px'>{tip}</li>" for tip in t["tips"]
-        )
+        # ── Suggestions ──
+        tips_html = "".join(f"<li style='margin-bottom:6px'>{tip}</li>" for tip in t["tips"])
+        card_class = f"treatment-card {t['card_class']}".strip()
         st.markdown(f"""
-        <div class='treatment-card {t["card_class"]}'>
+        <div class='{card_class}'>
             <b style='font-family:Sora,sans-serif;color:#e8f5e9;font-size:1rem'>
                 {t["icon"]} {t["title"]}
             </b>
@@ -324,17 +430,25 @@ with tab_dashboard:
         fig, ax = plt.subplots(figsize=(4, 4), facecolor="#0f1a10")
         ax.set_facecolor("#0f1a10")
         wedges, texts, autotexts = ax.pie(
-            rgb_values, labels=["Green", "Red", "Blue"], autopct="%1.1f%%",
-            colors=["#4caf50", "#ef5350", "#42a5f5"], startangle=90,
+            pie_values,
+            labels=["Green", "Yellow", "Brown"],
+            autopct="%1.1f%%",
+            colors=["#4caf50", "#ffca28", "#8d6e63"],
+            startangle=90,
             wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2}
         )
-        for tx in texts:  tx.set_color("#c8e6c9"); tx.set_fontsize(11)
-        for at in autotexts: at.set_color("white"); at.set_fontsize(10)
-        st.pyplot(fig); plt.close(fig)
+        for tx in texts:
+            tx.set_color("#c8e6c9")
+            tx.set_fontsize(11)
+        for at in autotexts:
+            at.set_color("white")
+            at.set_fontsize(10)
+        st.pyplot(fig)
+        plt.close(fig)
 
         st.write("---")
 
-        # ── 💾 Save ──
+        # ── Save ──
         st.markdown("#### 💾 Save Result")
         leaf_name = st.text_input("Leaf scan name", placeholder="e.g. Field-A Sample 1")
         if st.button("💾 Save to History"):
@@ -342,12 +456,13 @@ with tab_dashboard:
                 st.warning("Please enter a name before saving.")
             else:
                 st.session_state.history.append({
-                    "name":       leaf_name.strip(),
-                    "result":     result,
+                    "name": leaf_name.strip(),
+                    "result": result,
                     "confidence": confidence,
-                    "condition":  condition,
-                    "severity":   severity_label,
-                    "timestamp":  datetime.now().strftime("%d %b %Y, %I:%M %p")
+                    "condition": condition,
+                    "severity": severity_label,
+                    "pie_values": pie_values,
+                    "timestamp": datetime.now().strftime("%d %b %Y, %I:%M %p")
                 })
                 st.success(f"✅ '{leaf_name}' saved to history!")
     else:
@@ -361,15 +476,27 @@ with tab_analytics:
 
     if st.session_state.history:
         good_count = sum(1 for i in st.session_state.history if i["result"] == "GOOD")
-        bad_count  = sum(1 for i in st.session_state.history if i["result"] == "BAD")
-        high_risk  = sum(1 for i in st.session_state.history if "High" in i.get("severity", ""))
-        total      = len(st.session_state.history)
+        bad_count = sum(1 for i in st.session_state.history if i["result"] == "BAD")
+        high_risk = sum(1 for i in st.session_state.history if "High" in i.get("severity", ""))
+        total = len(st.session_state.history)
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(f"<div class='metric-box'><div class='metric-num'>{total}</div><div class='metric-label'>Total Scans</div></div>", unsafe_allow_html=True)
-        m2.markdown(f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{good_count}</div><div class='metric-label'>Healthy</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{bad_count}</div><div class='metric-label'>Diseased / Deficient</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-box'><div class='metric-num' style='color:#ef5350'>{high_risk}</div><div class='metric-label'>High Risk</div></div>", unsafe_allow_html=True)
+        m1.markdown(
+            f"<div class='metric-box'><div class='metric-num'>{total}</div><div class='metric-label'>Total Scans</div></div>",
+            unsafe_allow_html=True
+        )
+        m2.markdown(
+            f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{good_count}</div><div class='metric-label'>Healthy</div></div>",
+            unsafe_allow_html=True
+        )
+        m3.markdown(
+            f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{bad_count}</div><div class='metric-label'>Diseased / Deficient</div></div>",
+            unsafe_allow_html=True
+        )
+        m4.markdown(
+            f"<div class='metric-box'><div class='metric-num' style='color:#ef5350'>{high_risk}</div><div class='metric-label'>High Risk</div></div>",
+            unsafe_allow_html=True
+        )
 
         st.write("")
         col_pie, col_bar = st.columns(2)
@@ -378,49 +505,80 @@ with tab_analytics:
             st.markdown("##### Health Distribution")
             fig2, ax2 = plt.subplots(figsize=(4, 4), facecolor="#0f1a10")
             ax2.set_facecolor("#0f1a10")
-            ax2.pie([good_count, bad_count], labels=["GOOD", "BAD"], autopct="%1.1f%%",
-                    colors=["#4caf50", "#ef5350"], startangle=90,
-                    wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2})
-            for tx in ax2.texts: tx.set_color("#c8e6c9")
-            st.pyplot(fig2); plt.close(fig2)
+            ax2.pie(
+                [good_count, bad_count],
+                labels=["GOOD", "BAD"],
+                autopct="%1.1f%%",
+                colors=["#4caf50", "#ef5350"],
+                startangle=90,
+                wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2}
+            )
+            for tx in ax2.texts:
+                tx.set_color("#c8e6c9")
+            st.pyplot(fig2)
+            plt.close(fig2)
 
         with col_bar:
             st.markdown("##### Confidence per Scan")
-            names       = [i["name"][:12] for i in st.session_state.history]
-            confidences = [i["confidence"] for i in st.session_state.history]
-            bar_colors  = ["#4caf50" if i["result"] == "GOOD" else "#ef5350" for i in st.session_state.history]
+            names = [entry["name"][:12] if entry["name"] else f"Scan {i+1}" for i, entry in enumerate(st.session_state.history)]
+            confidences = [entry["confidence"] for entry in st.session_state.history]
+            bar_colors = ["#4caf50" if entry["result"] == "GOOD" else "#ef5350" for entry in st.session_state.history]
+
             fig3, ax3 = plt.subplots(figsize=(5, 4), facecolor="#0f1a10")
             ax3.set_facecolor("#1a2b1c")
             ax3.bar(range(len(names)), confidences, color=bar_colors, edgecolor="#0f1a10")
             ax3.set_xticks(range(len(names)))
             ax3.set_xticklabels(names, rotation=30, ha="right", color="#c8e6c9", fontsize=9)
             ax3.set_ylabel("Confidence (%)", color="#c8e6c9", fontsize=9)
-            ax3.set_ylim(0, 100); ax3.tick_params(colors="#c8e6c9")
-            for spine in ax3.spines.values(): spine.set_edgecolor("#2d4a2f")
-            ax3.legend(handles=[mpatches.Patch(color="#4caf50", label="GOOD"),
-                                 mpatches.Patch(color="#ef5350", label="BAD")],
-                       facecolor="#1a2b1c", labelcolor="white", edgecolor="#2d4a2f")
-            st.pyplot(fig3); plt.close(fig3)
+            ax3.set_ylim(0, 100)
+            ax3.tick_params(colors="#c8e6c9")
+            for spine in ax3.spines.values():
+                spine.set_edgecolor("#2d4a2f")
+            ax3.legend(
+                handles=[
+                    mpatches.Patch(color="#4caf50", label="GOOD"),
+                    mpatches.Patch(color="#ef5350", label="BAD")
+                ],
+                facecolor="#1a2b1c",
+                labelcolor="white",
+                edgecolor="#2d4a2f"
+            )
+            st.pyplot(fig3)
+            plt.close(fig3)
 
-        # Severity breakdown bar
         st.write("")
         st.markdown("##### 🌡️ Severity Breakdown")
+
         sev_counts = {
-            "Low Risk":    sum(1 for i in st.session_state.history if "Low"    in i.get("severity", "")),
+            "Low Risk": sum(1 for i in st.session_state.history if "Low" in i.get("severity", "")),
             "Medium Risk": sum(1 for i in st.session_state.history if "Medium" in i.get("severity", "")),
-            "High Risk":   sum(1 for i in st.session_state.history if "High"   in i.get("severity", "")),
+            "High Risk": sum(1 for i in st.session_state.history if "High" in i.get("severity", "")),
         }
+
         fig4, ax4 = plt.subplots(figsize=(5, 2.5), facecolor="#0f1a10")
         ax4.set_facecolor("#1a2b1c")
-        bars = ax4.barh(list(sev_counts.keys()), list(sev_counts.values()),
-                        color=["#4caf50", "#ffa726", "#ef5350"], edgecolor="#0f1a10", height=0.5)
+        bars = ax4.barh(
+            list(sev_counts.keys()),
+            list(sev_counts.values()),
+            color=["#4caf50", "#ffa726", "#ef5350"],
+            edgecolor="#0f1a10",
+            height=0.5
+        )
         ax4.set_xlabel("Count", color="#c8e6c9", fontsize=9)
         ax4.tick_params(colors="#c8e6c9")
-        for spine in ax4.spines.values(): spine.set_edgecolor("#2d4a2f")
+        for spine in ax4.spines.values():
+            spine.set_edgecolor("#2d4a2f")
         for bar, val in zip(bars, sev_counts.values()):
-            ax4.text(bar.get_width() + 0.05, bar.get_y() + bar.get_height() / 2,
-                     str(val), va="center", color="white", fontsize=10)
-        st.pyplot(fig4); plt.close(fig4)
+            ax4.text(
+                bar.get_width() + 0.05,
+                bar.get_y() + bar.get_height() / 2,
+                str(val),
+                va="center",
+                color="white",
+                fontsize=10
+            )
+        st.pyplot(fig4)
+        plt.close(fig4)
 
     else:
         st.info("No scan data yet. Upload and save leaf images from the Dashboard tab.")
@@ -437,16 +595,17 @@ with tab_history:
             st.rerun()
 
         for idx, item in enumerate(reversed(st.session_state.history), 1):
-            badge     = "badge-good" if item["result"] == "GOOD" else "badge-bad"
-            icon      = "✅" if item["result"] == "GOOD" else "⚠️"
-            sev       = item.get("severity", "")
-            ts        = item.get("timestamp", "—")
+            badge = "badge-good" if item["result"] == "GOOD" else "badge-bad"
+            icon = "✅" if item["result"] == "GOOD" else "⚠️"
+            sev = item.get("severity", "")
+            ts = item.get("timestamp", "—")
             sev_class = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
-            t_data    = TREATMENTS.get(item["condition"], TREATMENTS["Healthy Leaf"])
+            t_data = treatment_for_condition(item.get("condition", "Mixed Stress"))
             tips_html = "".join(
                 f"<li style='margin-bottom:4px;color:#a5c9a7;font-size:0.82rem'>{tip}</li>"
                 for tip in t_data["tips"]
             )
+            card_class = f"treatment-card {t_data['card_class']}".strip()
 
             st.markdown(f"""
             <div class='agro-card'>
@@ -468,7 +627,14 @@ with tab_history:
                                     font-family:Sora,sans-serif;font-weight:600'>
                         💡 View Treatment Tips
                     </summary>
-                    <ul style='padding-left:16px;margin-top:8px'>{tips_html}</ul>
+                    <div class='{card_class}' style='margin-top:10px'>
+                        <b style='font-family:Sora,sans-serif;color:#e8f5e9;font-size:0.95rem'>
+                            {t_data["icon"]} {t_data["title"]}
+                        </b>
+                        <ul style='padding-left:16px;margin-top:8px'>
+                            {tips_html}
+                        </ul>
+                    </div>
                 </details>
             </div>
             """, unsafe_allow_html=True)
@@ -505,9 +671,9 @@ with tab_about:
         st.markdown("""
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🔬 How It Works</h4>
-            The model extracts average RGB values from the image and computes colour ratios.
-            High green → Healthy. High red → Disease. Otherwise → Nutrient Deficiency.
-            Severity is determined by result type and confidence level.
+            The model converts the image to HSV space and filters out background noise. It then
+            measures green, yellow, and brown leaf tones to decide whether the leaf is healthy,
+            under nutrient stress, or affected by disease.
         </div>
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🔮 Future Scope</h4>

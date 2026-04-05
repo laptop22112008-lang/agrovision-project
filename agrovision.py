@@ -214,6 +214,38 @@ TREATMENTS = {
 }
 
 # HELPERS
+
+def is_leaf(image):
+    """
+    Returns True if the image looks like a leaf.
+    Checks for enough organic (green / yellow / brown) plant-like pixels.
+    Rejects images that are mostly bright, saturated non-plant colors
+    (e.g. cartoon characters, solid color backgrounds, people, etc.)
+    """
+    img      = np.array(image.convert("RGB")).astype(np.float32)
+    rgb_norm = img / 255.0
+    hsv      = rgb_to_hsv(rgb_norm)
+    h = hsv[:, :, 0] * 360.0
+    s = hsv[:, :, 1]
+    v = hsv[:, :, 2]
+
+    total_px = h.size
+
+    # Plant-like pixels: green, yellow-green, yellow, brown tones with decent saturation
+    green_px  = ((h >= 55)  & (h <= 165) & (s > 0.12) & (v > 0.10)).sum()
+    yellow_px = ((h >= 30)  & (h < 60)   & (s > 0.15) & (v > 0.25)).sum()
+    brown_px  = ((h >= 0)   & (h < 35)   & (s > 0.12) & (v > 0.10) & (v < 0.82)).sum()
+
+    plant_ratio = (green_px + yellow_px + brown_px) / total_px
+
+    # Also reject images that are mostly flat / artificial (very uniform hue, high saturation)
+    # e.g. a Pikachu image is very yellow with very little green
+    strong_green_ratio = ((h >= 60) & (h <= 150) & (s > 0.18)).sum() / total_px
+
+    # Must have at least 12% plant-like pixels AND at least 5% genuine green
+    return plant_ratio >= 0.12 and strong_green_ratio >= 0.05
+
+
 def safe_pie_values(values):
     arr = np.array(values, dtype=float)
     total = float(arr.sum())
@@ -255,7 +287,7 @@ def analyze_leaf(image):
         candidate = np.ones_like(h, dtype=bool)
 
     green_mask  = candidate & (h >= 60) & (h <= 160) & (s > 0.18)
-    yellow_mask = candidate & (h >= 22) & (h < 60) & (s > 0.15)
+    yellow_mask = candidate & (h >= 22) & (h < 60)   & (s > 0.15)
     brown_mask  = candidate & (
         (((h < 22) | (h >= 335)) & (v < 0.90)) |
         ((s < 0.32) & (v < 0.75))
@@ -375,6 +407,18 @@ with tab_dashboard:
             image = Image.open(io.BytesIO(uploaded_bytes))
 
     if image and uploaded_bytes:
+
+        # ── LEAF VALIDATION ──────────────────────────────
+        if not is_leaf(image):
+            st.image(image, use_container_width=True)
+            st.error(
+                "This does not look like a leaf image. "
+                "Please upload a clear photo of a plant leaf. "
+                "AgroVision only analyses leaf images."
+            )
+            st.stop()
+        # ─────────────────────────────────────────────────
+
         file_hash = hashlib.sha256(uploaded_bytes).hexdigest()
         result, confidence, condition, pie_values = analyze_leaf(image)
         severity_label, severity_class = get_severity(result, confidence, condition)
@@ -504,7 +548,7 @@ with tab_analytics:
 
         with col_bar:
             st.markdown("##### Confidence per Scan")
-            names      = [e["name"][:12] if e["name"] else f"Scan {i+1}" for i, e in enumerate(st.session_state.history)]
+            names       = [e["name"][:12] if e["name"] else f"Scan {i+1}" for i, e in enumerate(st.session_state.history)]
             confidences = [e["confidence"] for e in st.session_state.history]
             bar_colors  = ["#4caf50" if e["result"] == "GOOD" else "#ef5350" for e in st.session_state.history]
 
@@ -559,12 +603,12 @@ with tab_history:
             st.rerun()
 
         for idx, item in enumerate(st.session_state.history, 1):
-            badge     = "badge-good" if item["result"] == "GOOD" else "badge-bad"
-            sev       = item.get("severity", "")
-            ts        = item.get("timestamp", "-")
-            sev_class = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
-            t_data    = treatment_for_condition(item.get("condition", "Mixed Stress"))
-            tips_html = "".join(
+            badge        = "badge-good" if item["result"] == "GOOD" else "badge-bad"
+            sev          = item.get("severity", "")
+            ts           = item.get("timestamp", "-")
+            sev_class    = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
+            t_data       = treatment_for_condition(item.get("condition", "Mixed Stress"))
+            tips_html    = "".join(
                 f"<li style='margin-bottom:4px;color:#a5c9a7;font-size:0.82rem'>{tip}</li>"
                 for tip in t_data["tips"]
             )

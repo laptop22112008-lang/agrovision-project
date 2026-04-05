@@ -57,14 +57,27 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: non
 }
 
 /* Hero */
+.hero-wrap {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1rem;
+    padding: 0 0.5rem;
+}
 .hero-title {
-    font-family: 'Sora', sans-serif; font-size: clamp(1.8rem, 4.2vw, 2.6rem); font-weight: 700;
-    color: #e8f5e9; text-align: center; letter-spacing: -0.5px;
-    margin-bottom: 0; line-height: 1.1; word-break: break-word; padding: 0 0.6rem;
+    font-family: 'Sora', sans-serif;
+    font-size: clamp(1.55rem, 4.5vw, 2.45rem);
+    font-weight: 700;
+    color: #e8f5e9;
+    letter-spacing: -0.5px;
+    margin: 0 auto;
+    line-height: 1.08;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
 }
 .hero-sub {
-    font-size: 1rem; color: #81c784; text-align: center;
-    margin-top: 4px; margin-bottom: 1.6rem; padding: 0 0.6rem;
+    font-size: 1rem; color: #81c784;
+    margin-top: 6px; margin-bottom: 0;
 }
 
 /* Result badges */
@@ -254,16 +267,10 @@ def get_severity(result: str, confidence: float, condition: str):
 
 
 def analyze_leaf(image: Image.Image):
-    """
-    Stable leaf analysis using HSV:
-    - reduces background noise
-    - separates green / yellow / brown tones
-    - returns stable pie values
-    """
     img = np.array(image.convert("RGB")).astype(np.float32)
+
     rgb_norm = img / 255.0
     hsv = rgb_to_hsv(rgb_norm)
-
     h = hsv[:, :, 0] * 360.0
     s = hsv[:, :, 1]
     v = hsv[:, :, 2]
@@ -374,8 +381,12 @@ def make_pie_figure(values, colors, labels):
 # ─────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────
-st.markdown("<div class='hero-title'>🌿 AgroVision AI</div>", unsafe_allow_html=True)
-st.markdown("<div class='hero-sub'>Smart Plant Health Intelligence</div>", unsafe_allow_html=True)
+st.markdown("""
+<div class="hero-wrap">
+    <div class="hero-title">🌿 AgroVision AI</div>
+    <div class="hero-sub">Smart Plant Health Intelligence</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
 # NAVIGATION
@@ -459,8 +470,7 @@ with tab_dashboard:
 
         tips_html = "".join(f"<li style='margin-bottom:6px'>{tip}</li>" for tip in t["tips"])
         card_class = f"treatment-card {t['card_class']}".strip()
-        st.markdown(
-            f"""
+        st.markdown(f"""
         <div class='{card_class}'>
             <b style='font-family:Sora,sans-serif;color:#e8f5e9;font-size:1rem'>
                 {t["icon"]} {t["title"]}
@@ -469,9 +479,7 @@ with tab_dashboard:
                 {tips_html}
             </ul>
         </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        """, unsafe_allow_html=True)
 
         st.write("---")
 
@@ -646,7 +654,7 @@ with tab_history:
             st.session_state.saved_hashes = []
             st.rerun()
 
-        for idx, item in enumerate(reversed(st.session_state.history), 1):
+        for idx, item in enumerate(st.session_state.history, 1):
             badge = "badge-good" if item["result"] == "GOOD" else "badge-bad"
             icon = "✅" if item["result"] == "GOOD" else "⚠️"
             sev = item.get("severity", "")

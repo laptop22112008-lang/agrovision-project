@@ -58,12 +58,13 @@ div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: non
 
 /* ── Hero ── */
 .hero-title {
-    font-family: 'Sora', sans-serif; font-size: 2.6rem; font-weight: 700;
-    color: #e8f5e9; text-align: center; letter-spacing: -0.5px; margin-bottom: 0;
+    font-family: 'Sora', sans-serif; font-size: 2.35rem; font-weight: 700;
+    color: #e8f5e9; text-align: center; letter-spacing: -0.5px;
+    margin-bottom: 0; line-height: 1.1; word-break: break-word; padding: 0 0.5rem;
 }
 .hero-sub {
     font-size: 1rem; color: #81c784; text-align: center;
-    margin-top: 4px; margin-bottom: 1.6rem;
+    margin-top: 4px; margin-bottom: 1.6rem; padding: 0 0.5rem;
 }
 
 /* ── Result badges ── */
@@ -224,13 +225,11 @@ def safe_pie_values(values):
     if total <= 0:
         return [34.0, 33.0, 33.0]
 
-    # If one slice is basically the whole pie, keep it exact
     if np.max(arr) / total >= 0.995:
         out = [0.0, 0.0, 0.0]
         out[int(np.argmax(arr))] = 100.0
         return out
 
-    # Normal safe balance for mixed values
     arr = np.maximum(arr, 0.5)
     arr = arr / np.sum(arr) * 100.0
     return arr.tolist()
@@ -250,33 +249,22 @@ def get_severity(result: str, confidence: float, condition: str):
 
 
 def analyze_leaf(image: Image.Image):
-    """
-    Stable leaf analysis:
-    - uses HSV to reduce background/blue noise
-    - separates green/yellow/brown leaf tones
-    - returns safe pie values and a condition-specific result
-    """
     img = np.array(image.convert("RGB")).astype(np.float32)
 
-    # Normalize to 0..1 for HSV conversion
     rgb_norm = img / 255.0
     hsv = rgb_to_hsv(rgb_norm)
     h = hsv[:, :, 0] * 360.0
     s = hsv[:, :, 1]
     v = hsv[:, :, 2]
 
-    # Candidate pixels: avoid blue-ish background, require enough saturation/value
     candidate = (s > 0.12) & (v > 0.18) & ((h <= 120) | (h >= 335))
 
-    # Relax mask if image is too dark or the leaf is faint
     if candidate.mean() < 0.03:
         candidate = (s > 0.08) & (v > 0.15) & ((h <= 130) | (h >= 330))
 
-    # Final fallback: allow all pixels (keeps app working on odd images)
     if candidate.mean() < 0.02:
         candidate = np.ones_like(h, dtype=bool)
 
-    # Classify leaf pixels by tone
     green_mask = candidate & (h >= 60) & (h <= 160) & (s > 0.18)
     yellow_mask = candidate & (h >= 22) & (h < 60) & (s > 0.15)
     brown_mask = candidate & (
@@ -289,7 +277,6 @@ def analyze_leaf(image: Image.Image):
     brown_count = int(brown_mask.sum())
     candidate_count = int(candidate.sum())
 
-    # Any remaining leaf-like pixels go to "healthy-ish" so the chart stays stable
     unclassified = max(candidate_count - green_count - yellow_count - brown_count, 0)
 
     green_score = green_count + 0.55 * unclassified
@@ -307,10 +294,8 @@ def analyze_leaf(image: Image.Image):
         yellow_ratio = float(scores[1] / total_score)
         brown_ratio = float(scores[2] / total_score)
 
-    # Brightness support to reduce false positives from shadows
     brightness = float(np.mean(v[candidate])) if candidate.any() else float(np.mean(v))
 
-    # Decision logic
     if green_ratio >= 0.62 and brown_ratio < 0.08 and yellow_ratio < 0.18:
         result = "GOOD"
         condition = "Healthy Leaf"
@@ -681,7 +666,7 @@ with tab_about:
         </div>
         """, unsafe_allow_html=True)
 
-    with right:
+    with col_b:
         st.markdown("""
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🔬 How It Works</h4>

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.colors import rgb_to_hsv
 from datetime import datetime
+import io
+import hashlib
 
 # ─────────────────────────────────────────
 #  CONFIG
@@ -217,8 +219,18 @@ TREATMENTS = {
 
 def safe_pie_values(values):
     arr = np.array(values, dtype=float)
-    if np.sum(arr) <= 0:
+    total = arr.sum()
+
+    if total <= 0:
         return [34.0, 33.0, 33.0]
+
+    # If one slice is basically the whole pie, keep it exact
+    if np.max(arr) / total >= 0.995:
+        out = [0.0, 0.0, 0.0]
+        out[int(np.argmax(arr))] = 100.0
+        return out
+
+    # Normal safe balance for mixed values
     arr = np.maximum(arr, 0.5)
     arr = arr / np.sum(arr) * 100.0
     return arr.tolist()
@@ -409,7 +421,6 @@ with tab_dashboard:
 
         st.write("---")
 
-        # ── Suggestions ──
         tips_html = "".join(f"<li style='margin-bottom:6px'>{tip}</li>" for tip in t["tips"])
         card_class = f"treatment-card {t['card_class']}".strip()
         st.markdown(f"""
@@ -425,7 +436,6 @@ with tab_dashboard:
 
         st.write("---")
 
-        # ── Pie chart ──
         st.markdown("#### 📊 Leaf Colour Composition")
         fig, ax = plt.subplots(figsize=(4, 4), facecolor="#0f1a10")
         ax.set_facecolor("#0f1a10")
@@ -448,9 +458,13 @@ with tab_dashboard:
 
         st.write("---")
 
-        # ── Save ──
         st.markdown("#### 💾 Save Result")
-        leaf_name = st.text_input("Leaf scan name", placeholder="e.g. Field-A Sample 1")
+        leaf_name = st.text_input(
+            "Leaf scan name",
+            placeholder="e.g. Field-A Sample 1",
+            key=f"leaf_name_{st.session_state.result_data['scan_hash']}",
+        )
+
         if st.button("💾 Save to History"):
             if leaf_name.strip() == "":
                 st.warning("Please enter a name before saving.")
@@ -617,7 +631,7 @@ with tab_history:
                 </div>
                 <br>
                 <span class='{badge}'>{icon} {item['result']}</span>
-                &nbsp;<span class='{sev_class}'>{sev}</span>
+                &nbsp;<span class='{sev_class}'>{sev if sev else "—"}</span>
                 &nbsp;&nbsp;
                 <span style='color:#a5c9a7'>Condition: {item['condition']}</span><br>
                 <span style='color:#81c784;font-size:0.85rem'>Confidence: {item['confidence']}%</span>
@@ -653,21 +667,21 @@ with tab_about:
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🌿 What It Does</h4>
             AgroVision AI analyses leaf images using colour-ratio intelligence to instantly
-            detect plant health. Upload a photo or use your camera for an instant GOOD / BAD
+            detect plant health. Upload a photo for an instant GOOD / BAD
             classification, severity rating, treatment tips, and full timestamped history.
         </div>
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🚀 Features</h4>
             • Leaf health detection (Healthy / Disease / Deficiency)<br>
             • 🌡️ Severity meter — Low / Medium / High Risk<br>
-            • 📷 Camera capture or file upload<br>
+            • 📷 File upload<br>
             • 💡 Treatment suggestions per condition<br>
             • 📅 Timestamped scan history<br>
             • Analytics with severity breakdown chart
         </div>
         """, unsafe_allow_html=True)
 
-    with col_b:
+    with right:
         st.markdown("""
         <div class='agro-card'>
             <h4 style='margin-top:0;color:#a5d6a7'>🔬 How It Works</h4>

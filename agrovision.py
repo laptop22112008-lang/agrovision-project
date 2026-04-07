@@ -213,75 +213,20 @@ section[data-testid="stSidebar"] * {
 if "history" not in st.session_state:
     st.session_state.history = []
 
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
+
+if "result_data" not in st.session_state:
+    st.session_state.result_data = None
+
+if "input_key" not in st.session_state:
+    st.session_state.input_key = 0
+
+if "flash_message" not in st.session_state:
+    st.session_state.flash_message = ""
+
 if "saved_hashes" not in st.session_state:
     st.session_state.saved_hashes = []
-
-if "save_nonce" not in st.session_state:
-    st.session_state.save_nonce = 0
-
-# ─────────────────────────────────────────
-# TREATMENT DATABASE
-# ─────────────────────────────────────────
-TREATMENTS = {
-    "Healthy Leaf": {
-        "card_class": "",
-        "icon": "✅",
-        "title": "Plant is healthy — maintain current care",
-        "tips": [
-            "Continue the regular watering schedule",
-            "Apply balanced NPK fertiliser monthly",
-            "Monitor for early signs of pests or discolouration",
-            "Ensure adequate sunlight and airflow between plants",
-        ],
-    },
-    "Mostly Healthy": {
-        "card_class": "",
-        "icon": "🟢",
-        "title": "Mostly healthy — only minor stress detected",
-        "tips": [
-            "Inspect the plant again in 3–5 days",
-            "Check if the leaf is getting too much direct sun",
-            "Avoid overwatering and keep soil moisture stable",
-            "Remove only clearly damaged parts if needed",
-        ],
-    },
-    "Disease Detected": {
-        "card_class": "danger",
-        "icon": "🦠",
-        "title": "Disease treatment recommended",
-        "tips": [
-            "Remove and dispose of heavily infected leaves immediately",
-            "Apply a copper-based or neem oil fungicide/bactericide spray",
-            "Avoid overhead watering — water at the base only",
-            "Increase plant spacing to improve air circulation",
-            "Re-inspect after 7 days and repeat treatment if needed",
-        ],
-    },
-    "Nutrient Deficiency": {
-        "card_class": "warn",
-        "icon": "🌱",
-        "title": "Nutrient correction needed",
-        "tips": [
-            "Test soil pH — ideal range is 6.0–7.0 for most crops",
-            "Apply a micronutrient-rich foliar spray (Fe, Mg, Zn)",
-            "Add organic compost to improve soil structure and retention",
-            "Consider a slow-release fertiliser with balanced N-P-K",
-            "Avoid over-watering which leaches nutrients from the soil",
-        ],
-    },
-    "Mixed Stress": {
-        "card_class": "warn",
-        "icon": "⚠️",
-        "title": "Mixed stress detected — monitor carefully",
-        "tips": [
-            "Check watering consistency first",
-            "Inspect for pests, fungal spots, and leaf curling",
-            "Reduce heat stress with partial shade if needed",
-            "Re-scan the leaf under natural light for confirmation",
-            "If symptoms spread, isolate the plant from others",
-        ],
-    },
-}
 
 # ─────────────────────────────────────────
 # HELPERS
@@ -484,7 +429,6 @@ if REPORTLAB_AVAILABLE:
         story.append(RLImage(pie_buf, width=200, height=200))
         return story
 
-
     def build_pdf_bytes(item):
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer)
@@ -492,7 +436,6 @@ if REPORTLAB_AVAILABLE:
         doc.build(build_report_story(item, styles))
         buffer.seek(0)
         return buffer.getvalue()
-
 
     def build_all_pdf_bytes(history):
         buffer = io.BytesIO()
@@ -520,7 +463,6 @@ else:
         )
         return text.encode("utf-8")
 
-
     def build_all_report_bytes(history):
         parts = []
         for item in history:
@@ -534,7 +476,6 @@ else:
                 f"{'-'*40}\n"
             )
         return "\n".join(parts).encode("utf-8")
-
 
 # ─────────────────────────────────────────
 # HEADER
@@ -601,7 +542,7 @@ if st.session_state.page == "Home":
     if image and uploaded_bytes:
         if not is_leaf(image):
             st.image(image, use_container_width=True, caption="Uploaded Image")
-            st.markdown("Please upload a leaf image.")
+            st.write("Please upload a leaf image.")
             st.stop()
 
         file_hash = hashlib.sha256(uploaded_bytes).hexdigest()
@@ -679,18 +620,18 @@ if st.session_state.page == "Home":
         leaf_name = st.text_input(
             "Leaf scan name",
             placeholder="e.g. Field-A Sample 1",
-            key=f"leaf_name_{file_hash}_{st.session_state.save_nonce}",
+            key=f"leaf_name_{file_hash}_{st.session_state.input_key}",
         )
 
         if st.button("💾 Save to History"):
-            if leaf_name.strip() == "":
-                st.write("Please enter a name before saving.")
-            elif file_hash in st.session_state.saved_hashes:
-                st.write("This image is already saved.")
+            save_name = leaf_name.strip() if leaf_name.strip() else f"Leaf Scan {len(st.session_state.history)+1}"
+
+            if file_hash in st.session_state.saved_hashes:
+                st.write("This leaf image is already saved in history.")
             else:
                 st.session_state.history.append(
                     {
-                        "name": leaf_name.strip(),
+                        "name": save_name,
                         "result": result,
                         "confidence": confidence,
                         "condition": condition,
@@ -705,8 +646,8 @@ if st.session_state.page == "Home":
                     }
                 )
                 st.session_state.saved_hashes.append(file_hash)
-                st.session_state.save_nonce += 1
-                st.session_state.flash_message = f"✅ '{leaf_name}' saved to history!"
+                st.session_state.input_key += 1
+                st.session_state.flash_message = f"✅ '{save_name}' saved to history!"
                 st.session_state.result_data = None
                 st.rerun()
     else:
@@ -745,10 +686,6 @@ elif st.session_state.page == "History":
             ts = item.get("timestamp", "—")
             sev_class = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
             t_data = treatment_for_condition(item.get("condition", "Mixed Stress"))
-            tips_html = "".join(
-                f"<li style='margin-bottom:4px;color:#a5c9a7;font-size:0.82rem'>{tip}</li>"
-                for tip in t_data["tips"]
-            )
 
             st.markdown(
                 f"""
@@ -985,4 +922,4 @@ elif st.session_state.page == "About":
 </div>
 """,
             unsafe_allow_html=True,
-        )
+    )

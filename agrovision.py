@@ -3,6 +3,7 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib.colors import rgb_to_hsv
 from datetime import datetime
 import io
@@ -132,6 +133,7 @@ section[data-testid="stSidebar"] * {
     color: #99f6e4;
     font-family: 'Sora', sans-serif;
     font-weight: 700;
+    letter-spacing: 0.3px;
 }
 
 .bad-badge {
@@ -143,6 +145,7 @@ section[data-testid="stSidebar"] * {
     color: #fecdd3;
     font-family: 'Sora', sans-serif;
     font-weight: 700;
+    letter-spacing: 0.3px;
 }
 
 .sev-low {
@@ -249,6 +252,18 @@ def safe_pie_values(values):
     arr = np.maximum(arr, 0.5)
     arr = arr / np.sum(arr) * 100.0
     return arr.tolist()
+
+
+def get_severity(result, confidence, condition):
+    if result == "GOOD":
+        if confidence >= 86:
+            return "Low Risk", "sev-low"
+        return "Monitor", "sev-medium"
+    if condition == "Disease Detected" or confidence >= 82:
+        return "High Risk", "sev-high"
+    if confidence >= 68:
+        return "Medium Risk", "sev-medium"
+    return "Low Risk", "sev-low"
 
 
 def make_pie_figure(values, colors, labels):
@@ -359,6 +374,16 @@ def analyze_leaf(image: Image.Image):
 
     confidence = round(float(np.clip(confidence, 50.0, 99.9)), 2)
     return result, confidence, condition, pie_values
+
+
+def treatment_for_condition(condition):
+    return {
+        "Healthy Leaf": {},
+        "Mostly Healthy": {},
+        "Disease Detected": {},
+        "Nutrient Deficiency": {},
+        "Mixed Stress": {},
+    }.get(condition, {})
 
 
 def make_report_bytes(item):
@@ -770,13 +795,13 @@ elif st.session_state.page == "About":
             """
 <div class="about-card">
     <h4 style="margin-top:0;color:#76d1ff">🌿 What It Does</h4>
-    AgroVision AI analyses leaf images using green, yellow and brown ratio checks.
-    </div>
+    AgroVision AI checks the green, yellow, and brown ratio in a leaf image.
+</div>
 <div class="about-card">
     <h4 style="margin-top:0;color:#76d1ff">🚀 Features</h4>
-    • Leaf ratio detection<br>
-    • Confidence-based prediction<br>
-    • Visual pie chart analysis<br>
+    • Green ratio<br>
+    • Yellow ratio<br>
+    • Brown ratio<br>
     • History tracking<br>
     • Report downloads
 </div>
@@ -789,8 +814,7 @@ elif st.session_state.page == "About":
             """
 <div class="about-card">
     <h4 style="margin-top:0;color:#76d1ff">🔬 How It Works</h4>
-    The model checks colour ratios from the uploaded leaf image and uses them to determine
-    the result.
+    The model reads the uploaded image and checks the color ratios.
 </div>
 <div class="about-card">
     <h4 style="margin-top:0;color:#76d1ff">🔮 Future Scope</h4>

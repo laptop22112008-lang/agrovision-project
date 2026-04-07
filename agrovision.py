@@ -3,7 +3,6 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from matplotlib.colors import rgb_to_hsv
 from datetime import datetime
 import io
@@ -28,7 +27,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────
-# CUSTOM CSS
+# CSS
 # ─────────────────────────────────────────
 st.markdown(
     """
@@ -72,7 +71,6 @@ section[data-testid="stSidebar"] * {
     font-family: 'Sora', sans-serif !important;
     font-weight: 700 !important;
     box-shadow: 0 6px 18px rgba(14,165,233,0.16);
-    transition: all 0.2s ease-in-out;
 }
 .stButton > button:hover {
     transform: translateY(-1px);
@@ -93,7 +91,7 @@ section[data-testid="stSidebar"] * {
     padding: 0.8rem;
 }
 
-.hero-card, .main-card, .stat-card, .analysis-card, .history-card, .about-card {
+.hero-card, .main-card, .stat-card, .history-card, .about-card {
     background: linear-gradient(180deg, rgba(10,22,34,0.95), rgba(8,17,26,0.98));
     border: 1px solid #1f3950;
     border-radius: 18px;
@@ -115,11 +113,6 @@ section[data-testid="stSidebar"] * {
     text-align: center;
 }
 
-.analysis-card {
-    padding: 1rem 1.1rem;
-    margin-top: 0.85rem;
-}
-
 .history-card {
     padding: 1rem 1.1rem;
     margin-bottom: 0.9rem;
@@ -139,7 +132,6 @@ section[data-testid="stSidebar"] * {
     color: #99f6e4;
     font-family: 'Sora', sans-serif;
     font-weight: 700;
-    letter-spacing: 0.3px;
 }
 
 .bad-badge {
@@ -151,7 +143,6 @@ section[data-testid="stSidebar"] * {
     color: #fecdd3;
     font-family: 'Sora', sans-serif;
     font-weight: 700;
-    letter-spacing: 0.3px;
 }
 
 .sev-low {
@@ -222,78 +213,8 @@ if "page" not in st.session_state:
     st.session_state.page = "Home"
 
 # ─────────────────────────────────────────
-# TREATMENT DATABASE
-# ─────────────────────────────────────────
-TREATMENTS = {
-    "Healthy Leaf": {
-        "card_class": "",
-        "icon": "✅",
-        "title": "Plant is healthy — maintain current care",
-        "tips": [
-            "Continue the regular watering schedule",
-            "Apply balanced NPK fertiliser monthly",
-            "Monitor for early signs of pests or discolouration",
-            "Ensure adequate sunlight and airflow between plants",
-        ],
-    },
-    "Mostly Healthy": {
-        "card_class": "",
-        "icon": "🟢",
-        "title": "Mostly healthy — only minor stress detected",
-        "tips": [
-            "Inspect the plant again in 3–5 days",
-            "Check if the leaf is getting too much direct sun",
-            "Avoid overwatering and keep soil moisture stable",
-            "Remove only clearly damaged parts if needed",
-        ],
-    },
-    "Disease Detected": {
-        "card_class": "danger",
-        "icon": "🦠",
-        "title": "Disease treatment recommended",
-        "tips": [
-            "Remove and dispose of heavily infected leaves immediately",
-            "Apply a copper-based or neem oil fungicide/bactericide spray",
-            "Avoid overhead watering — water at the base only",
-            "Increase plant spacing to improve air circulation",
-            "Re-inspect after 7 days and repeat treatment if needed",
-        ],
-    },
-    "Nutrient Deficiency": {
-        "card_class": "warn",
-        "icon": "🌱",
-        "title": "Nutrient correction needed",
-        "tips": [
-            "Test soil pH — ideal range is 6.0–7.0 for most crops",
-            "Apply a micronutrient-rich foliar spray (Fe, Mg, Zn)",
-            "Add organic compost to improve soil structure and retention",
-            "Consider a slow-release fertiliser with balanced N-P-K",
-            "Avoid over-watering which leaches nutrients from the soil",
-        ],
-    },
-    "Mixed Stress": {
-        "card_class": "warn",
-        "icon": "⚠️",
-        "title": "Mixed stress detected — monitor carefully",
-        "tips": [
-            "Check watering consistency first",
-            "Inspect for pests, fungal spots, and leaf curling",
-            "Reduce heat stress with partial shade if needed",
-            "Re-scan the leaf under natural light for confirmation",
-            "If symptoms spread, isolate the plant from others",
-        ],
-    },
-}
-
-# ─────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────
-def image_to_bytes(img: Image.Image):
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="PNG")
-    return buf.getvalue()
-
-
 def is_leaf(image: Image.Image) -> bool:
     img = np.array(image.convert("RGB")).astype(np.float32)
     hsv = rgb_to_hsv(img / 255.0)
@@ -318,7 +239,6 @@ def is_leaf(image: Image.Image) -> bool:
         return False
     if strong_green_ratio < 0.04 and brown_px / total_px < 0.03 and yellow_px / total_px < 0.15:
         return False
-
     return True
 
 
@@ -331,22 +251,51 @@ def safe_pie_values(values):
     return arr.tolist()
 
 
-def get_severity(result, confidence, condition):
-    if result == "GOOD":
-        if confidence >= 86:
-            return "Low Risk", "sev-low"
-        return "Monitor", "sev-medium"
-    if condition == "Disease Detected" or confidence >= 82:
-        return "High Risk", "sev-high"
-    if confidence >= 68:
-        return "Medium Risk", "sev-medium"
-    return "Low Risk", "sev-low"
+def make_pie_figure(values, colors, labels):
+    fig, ax = plt.subplots(figsize=(4.5, 4.5), facecolor="#0c1722")
+    ax.set_facecolor("#0c1722")
+
+    wedges, _, autotexts = ax.pie(
+        safe_pie_values(values),
+        autopct="%1.1f%%",
+        colors=colors,
+        startangle=90,
+        wedgeprops={"edgecolor": "#0c1722", "linewidth": 2},
+        pctdistance=0.72,
+        labels=None,
+    )
+
+    legend = ax.legend(
+        wedges,
+        labels,
+        loc="center left",
+        bbox_to_anchor=(1.0, 0.5),
+        frameon=False,
+    )
+
+    for text in legend.get_texts():
+        text.set_color("#d5e3f0")
+    for t in autotexts:
+        t.set_color("white")
+        t.set_fontsize(10)
+
+    ax.axis("equal")
+    return fig
 
 
-def analyze_leaf(image):
+def figure_to_bytes(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def analyze_leaf(image: Image.Image):
     img = np.array(image.convert("RGB")).astype(np.float32)
     rgb_norm = img / 255.0
     hsv = rgb_to_hsv(rgb_norm)
+
     h = hsv[:, :, 0] * 360.0
     s = hsv[:, :, 1]
     v = hsv[:, :, 2]
@@ -368,7 +317,6 @@ def analyze_leaf(image):
     yellow_count = int(yellow_mask.sum())
     brown_count = int(brown_mask.sum())
     candidate_count = int(candidate.sum())
-
     unclassified = max(candidate_count - green_count - yellow_count - brown_count, 0)
 
     green_score = green_count + 0.55 * unclassified
@@ -413,55 +361,12 @@ def analyze_leaf(image):
     return result, confidence, condition, pie_values
 
 
-def treatment_for_condition(condition):
-    return TREATMENTS.get(condition, TREATMENTS["Mixed Stress"])
+def make_report_bytes(item):
+    if REPORTLAB_AVAILABLE:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer)
+        styles = getSampleStyleSheet()
 
-
-def make_pie_figure(values, colors, labels):
-    fig, ax = plt.subplots(figsize=(4.5, 4.5), facecolor="#0f1a10")
-    ax.set_facecolor("#0f1a10")
-
-    values = safe_pie_values(values)
-
-    wedges, _, autotexts = ax.pie(
-        values,
-        autopct=lambda p: f"{p:.1f}%" if p >= 4 else "",
-        colors=colors,
-        startangle=90,
-        wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2},
-        pctdistance=0.72,
-        labels=None,
-    )
-
-    legend = ax.legend(
-        wedges,
-        labels,
-        loc="center left",
-        bbox_to_anchor=(1.0, 0.5),
-        frameon=False,
-    )
-
-    for text in legend.get_texts():
-        text.set_color("#d5e3f0")
-
-    for t in autotexts:
-        t.set_color("white")
-        t.set_fontsize(10)
-
-    ax.axis("equal")
-    return fig
-
-
-def figure_to_bytes(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-
-if REPORTLAB_AVAILABLE:
-    def build_report_story(item, styles):
         story = []
         story.append(Paragraph(f"<b>{item['name']}</b>", styles["Title"]))
         story.append(Spacer(1, 10))
@@ -476,62 +381,70 @@ if REPORTLAB_AVAILABLE:
         story.append(RLImage(img_buf, width=200, height=200))
         story.append(Spacer(1, 10))
 
-        pie_fig = make_pie_figure(
-            item["pie_values"],
-            ["#14b8a6", "#f59e0b", "#fb7185"],
-            ["Green", "Yellow", "Brown"],
-        )
+        pie_fig = make_pie_figure(item["pie_values"], ["#4caf50", "#ffca28", "#8d6e63"], ["Green", "Yellow", "Brown"])
         pie_buf = figure_to_bytes(pie_fig)
         story.append(RLImage(pie_buf, width=200, height=200))
-        return story
 
-    def build_pdf_bytes(item):
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer)
-        styles = getSampleStyleSheet()
-        doc.build(build_report_story(item, styles))
+        doc.build(story)
         buffer.seek(0)
         return buffer.getvalue()
 
-    def build_all_pdf_bytes(history):
+    text = (
+        f"AgroVision AI Report\n\n"
+        f"Name: {item['name']}\n"
+        f"Result: {item['result']}\n"
+        f"Confidence: {item['confidence']}%\n"
+        f"Condition: {item['condition']}\n"
+        f"Timestamp: {item.get('timestamp', '—')}\n"
+    )
+    return text.encode("utf-8")
+
+
+def make_all_report_bytes(history):
+    if REPORTLAB_AVAILABLE:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer)
         styles = getSampleStyleSheet()
         story = []
 
         for idx, item in enumerate(history):
-            story.extend(build_report_story(item, styles))
+            story.append(Paragraph(f"<b>{item['name']}</b>", styles["Title"]))
+            story.append(Spacer(1, 10))
+            story.append(Paragraph(f"Result: {item['result']}", styles["Normal"]))
+            story.append(Paragraph(f"Confidence: {item['confidence']}%", styles["Normal"]))
+            story.append(Paragraph(f"Condition: {item['condition']}", styles["Normal"]))
+            story.append(Paragraph(f"Timestamp: {item.get('timestamp', '—')}", styles["Normal"]))
+            story.append(Spacer(1, 10))
+
+            img_buf = io.BytesIO(item["image_bytes"])
+            img_buf.seek(0)
+            story.append(RLImage(img_buf, width=200, height=200))
+            story.append(Spacer(1, 10))
+
+            pie_fig = make_pie_figure(item["pie_values"], ["#4caf50", "#ffca28", "#8d6e63"], ["Green", "Yellow", "Brown"])
+            pie_buf = figure_to_bytes(pie_fig)
+            story.append(RLImage(pie_buf, width=200, height=200))
+
             if idx < len(history) - 1:
                 story.append(PageBreak())
 
         doc.build(story)
         buffer.seek(0)
         return buffer.getvalue()
-else:
-    def build_report_bytes(item):
-        text = (
-            f"AgroVision AI Report\n\n"
+
+    parts = []
+    for item in history:
+        parts.append(
+            f"AgroVision AI Report\n"
             f"Name: {item['name']}\n"
             f"Result: {item['result']}\n"
             f"Confidence: {item['confidence']}%\n"
             f"Condition: {item['condition']}\n"
             f"Timestamp: {item.get('timestamp', '—')}\n"
+            f"{'-'*40}\n"
         )
-        return text.encode("utf-8")
+    return "\n".join(parts).encode("utf-8")
 
-    def build_all_report_bytes(history):
-        parts = []
-        for item in history:
-            parts.append(
-                f"AgroVision AI Report\n"
-                f"Name: {item['name']}\n"
-                f"Result: {item['result']}\n"
-                f"Confidence: {item['confidence']}%\n"
-                f"Condition: {item['condition']}\n"
-                f"Timestamp: {item.get('timestamp', '—')}\n"
-                f"{'-'*40}\n"
-            )
-        return "\n".join(parts).encode("utf-8")
 
 # ─────────────────────────────────────────
 # HEADER
@@ -543,7 +456,7 @@ st.markdown(
         🌿 AgroVision AI
     </div>
     <div style="font-size:1rem; color:#76d1ff; margin-top:0.35rem;">
-        Smart leaf analysis with clean reporting and history tracking
+        Green, Yellow, Brown ratio analysis
     </div>
 </div>
 """,
@@ -571,28 +484,15 @@ if st.session_state.page == "Home":
         st.success(st.session_state.flash_message)
         st.session_state.flash_message = ""
 
-    st.markdown("#### 🔎 Scan a leaf to detect plant health")
-
-    source = st.radio(
-        "Input source",
-        ["📁 Upload Image", "📷 Use Camera"],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
+    st.markdown("#### 🔎 Scan a leaf image")
 
     image = None
     uploaded_bytes = None
 
-    if source == "📁 Upload Image":
-        f = st.file_uploader("Upload", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-        if f:
-            uploaded_bytes = f.getvalue()
-            image = Image.open(io.BytesIO(uploaded_bytes))
-    else:
-        cam = st.camera_input("Point your camera at the leaf and press capture")
-        if cam:
-            uploaded_bytes = cam.getvalue()
-            image = Image.open(io.BytesIO(uploaded_bytes))
+    f = st.file_uploader("Upload", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+    if f:
+        uploaded_bytes = f.getvalue()
+        image = Image.open(io.BytesIO(uploaded_bytes))
 
     if image and uploaded_bytes:
         if not is_leaf(image):
@@ -601,9 +501,9 @@ if st.session_state.page == "Home":
             st.stop()
 
         file_hash = hashlib.sha256(uploaded_bytes).hexdigest()
+
         result, confidence, condition, pie_values = analyze_leaf(image)
         severity_label, severity_class = get_severity(result, confidence, condition)
-        t = treatment_for_condition(condition)
 
         col_img, col_result = st.columns([1, 1], gap="large")
 
@@ -625,37 +525,19 @@ if st.session_state.page == "Home":
             st.caption(f"Confidence: **{confidence}%**")
 
             st.write("")
-            p1, p2, p3 = st.columns(3)
-            p1.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{pie_values[0]:.0f}%</div>"
-                f"<div class='metric-label'>Healthy Tissue</div></div>",
+            c1, c2, c3 = st.columns(3)
+            c1.markdown(
+                f"<div class='stat-card'><div class='soft-label'>Green Ratio</div><div class='soft-value' style='color:#a5d6a7'>{pie_values[0]:.0f}%</div></div>",
                 unsafe_allow_html=True,
             )
-            p2.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#ffcc80'>{pie_values[1]:.0f}%</div>"
-                f"<div class='metric-label'>Warning Tissue</div></div>",
+            c2.markdown(
+                f"<div class='stat-card'><div class='soft-label'>Yellow Ratio</div><div class='soft-value' style='color:#ffcc80'>{pie_values[1]:.0f}%</div></div>",
                 unsafe_allow_html=True,
             )
-            p3.markdown(
-                f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{pie_values[2]:.0f}%</div>"
-                f"<div class='metric-label'>Damaged Tissue</div></div>",
+            c3.markdown(
+                f"<div class='stat-card'><div class='soft-label'>Brown Ratio</div><div class='soft-value' style='color:#ef9a9a'>{pie_values[2]:.0f}%</div></div>",
                 unsafe_allow_html=True,
             )
-
-        st.write("---")
-
-        tips_html = "".join(f"<li style='margin-bottom:6px'>{tip}</li>" for tip in t["tips"])
-        card_class = f"treatment-card {t['card_class']}".strip()
-        st.markdown(f"""
-        <div class='{card_class}'>
-            <b style='font-family:Sora,sans-serif;color:#e8f5e9;font-size:1rem'>
-                {t["icon"]} {t["title"]}
-            </b>
-            <ul style='color:#c8e6c9;margin-top:10px;padding-left:18px'>
-                {tips_html}
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
 
         st.write("---")
 
@@ -670,7 +552,6 @@ if st.session_state.page == "Home":
 
         st.write("---")
 
-        st.markdown("#### 💾 Save Result")
         leaf_name = st.text_input(
             "Leaf scan name",
             placeholder="e.g. Field-A Sample 1",
@@ -679,6 +560,7 @@ if st.session_state.page == "Home":
 
         if st.button("💾 Save to History"):
             save_name = leaf_name.strip() if leaf_name.strip() else f"Leaf Scan {len(st.session_state.history)+1}"
+
             if file_hash in st.session_state.saved_hashes:
                 st.write("This leaf image is already saved in history.")
             else:
@@ -697,7 +579,7 @@ if st.session_state.page == "Home":
                 )
                 st.session_state.saved_hashes.append(file_hash)
                 st.session_state.save_nonce += 1
-                st.session_state.flash_message = f"✅ '{save_name}' saved to history!"
+                st.session_state.flash_message = f"Saved: {save_name}"
                 st.rerun()
     else:
         st.info("⬆️ Upload an image above to scan a leaf.")
@@ -713,7 +595,7 @@ elif st.session_state.page == "History":
         📁 History
     </div>
     <div style="font-size:1rem; color:#76d1ff; margin-top:0.25rem;">
-        Saved analyses with downloadable reports
+        Saved scans
     </div>
 </div>
 """,
@@ -734,6 +616,7 @@ elif st.session_state.page == "History":
             sev = item.get("severity", "")
             ts = item.get("timestamp", "—")
             sev_class = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
+
             st.markdown(
                 f"""
 <div class='history-card'>
@@ -754,12 +637,8 @@ elif st.session_state.page == "History":
                 unsafe_allow_html=True,
             )
 
-            if REPORTLAB_AVAILABLE:
-                report_bytes = build_pdf_bytes(item)
-                file_name = f"{item['name']}.pdf"
-            else:
-                report_bytes = build_report_bytes(item)
-                file_name = f"{item['name']}.txt"
+            report_bytes = make_report_bytes(item)
+            file_name = f"{item['name']}.pdf" if REPORTLAB_AVAILABLE else f"{item['name']}.txt"
 
             st.download_button(
                 "Download Report",
@@ -770,12 +649,8 @@ elif st.session_state.page == "History":
 
         st.markdown("---")
 
-        if REPORTLAB_AVAILABLE:
-            all_report = build_all_pdf_bytes(st.session_state.history)
-            all_name = "All_Leaf_Reports.pdf"
-        else:
-            all_report = build_all_report_bytes(st.session_state.history)
-            all_name = "All_Leaf_Reports.txt"
+        all_report = make_all_report_bytes(st.session_state.history)
+        all_name = "All_Leaf_Reports.pdf" if REPORTLAB_AVAILABLE else "All_Leaf_Reports.txt"
 
         st.download_button(
             "Download All Reports",
@@ -794,7 +669,7 @@ elif st.session_state.page == "Analytics":
         📊 Analytics
     </div>
     <div style="font-size:1rem; color:#76d1ff; margin-top:0.25rem;">
-        Overall scan trends and health summary
+        Scan summary
     </div>
 </div>
 """,
@@ -802,26 +677,21 @@ elif st.session_state.page == "Analytics":
     )
 
     if st.session_state.history:
-        good_count = sum(1 for i in st.session_state.history if i["result"] == "GOOD")
+        green_count = sum(1 for i in st.session_state.history if i["result"] == "GOOD")
         bad_count = sum(1 for i in st.session_state.history if i["result"] == "BAD")
-        high_risk = sum(1 for i in st.session_state.history if "High" in i.get("severity", ""))
         total = len(st.session_state.history)
 
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3 = st.columns(3)
         m1.markdown(
             f"<div class='stat-card'><div class='soft-label'>Total Scans</div><div class='soft-value'>{total}</div></div>",
             unsafe_allow_html=True,
         )
         m2.markdown(
-            f"<div class='stat-card'><div class='soft-label'>Healthy</div><div class='soft-value' style='color:#99f6e4'>{good_count}</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>GOOD</div><div class='soft-value' style='color:#99f6e4'>{green_count}</div></div>",
             unsafe_allow_html=True,
         )
         m3.markdown(
-            f"<div class='stat-card'><div class='soft-label'>Diseased / Deficient</div><div class='soft-value' style='color:#fecaca'>{bad_count}</div></div>",
-            unsafe_allow_html=True,
-        )
-        m4.markdown(
-            f"<div class='stat-card'><div class='soft-label'>High Risk</div><div class='soft-value' style='color:#ef5350'>{high_risk}</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>BAD</div><div class='soft-value' style='color:#fecaca'>{bad_count}</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -829,23 +699,27 @@ elif st.session_state.page == "Analytics":
         col_pie, col_bar = st.columns(2)
 
         with col_pie:
-            st.markdown("##### Health Distribution")
-            fig2 = make_pie_figure(
-                [good_count, bad_count],
-                ["#14b8a6", "#fb7185"],
-                ["GOOD", "BAD"],
+            st.markdown("##### Good vs Bad")
+            fig2, ax2 = plt.subplots(figsize=(4, 4), facecolor="#0f1a10")
+            ax2.set_facecolor("#0f1a10")
+            ax2.pie(
+                [green_count, bad_count],
+                labels=["GOOD", "BAD"],
+                autopct="%1.1f%%",
+                colors=["#4caf50", "#ef5350"],
+                startangle=90,
+                wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2},
             )
+            for tx in ax2.texts:
+                tx.set_color("#c8e6c9")
             st.pyplot(fig2)
             plt.close(fig2)
 
         with col_bar:
             st.markdown("##### Confidence per Scan")
-            names = [
-                entry["name"][:12] if entry["name"] else f"Scan {i+1}"
-                for i, entry in enumerate(st.session_state.history)
-            ]
+            names = [entry["name"][:12] if entry["name"] else f"Scan {i+1}" for i, entry in enumerate(st.session_state.history)]
             confidences = [entry["confidence"] for entry in st.session_state.history]
-            bar_colors = ["#14b8a6" if entry["result"] == "GOOD" else "#fb7185" for entry in st.session_state.history]
+            bar_colors = ["#4caf50" if entry["result"] == "GOOD" else "#ef5350" for entry in st.session_state.history]
 
             fig3, ax3 = plt.subplots(figsize=(5, 4), facecolor="#0f1a10")
             ax3.set_facecolor("#1a2b1c")
@@ -859,8 +733,8 @@ elif st.session_state.page == "Analytics":
                 spine.set_edgecolor("#23405c")
             ax3.legend(
                 handles=[
-                    mpatches.Patch(color="#14b8a6", label="GOOD"),
-                    mpatches.Patch(color="#fb7185", label="BAD"),
+                    mpatches.Patch(color="#4caf50", label="GOOD"),
+                    mpatches.Patch(color="#ef5350", label="BAD"),
                 ],
                 facecolor="#0c1722",
                 labelcolor="white",
@@ -868,40 +742,6 @@ elif st.session_state.page == "Analytics":
             )
             st.pyplot(fig3)
             plt.close(fig3)
-
-        st.write("")
-        st.markdown("##### 🌡️ Severity Breakdown")
-
-        sev_counts = {
-            "Low Risk": sum(1 for i in st.session_state.history if "Low" in i.get("severity", "")),
-            "Medium Risk": sum(1 for i in st.session_state.history if "Medium" in i.get("severity", "")),
-            "High Risk": sum(1 for i in st.session_state.history if "High" in i.get("severity", "")),
-        }
-
-        fig4, ax4 = plt.subplots(figsize=(5, 2.5), facecolor="#0f1a10")
-        ax4.set_facecolor("#1a2b1c")
-        bars = ax4.barh(
-            list(sev_counts.keys()),
-            list(sev_counts.values()),
-            color=["#4caf50", "#ffa726", "#ef5350"],
-            edgecolor="#0f1a10",
-            height=0.5,
-        )
-        ax4.set_xlabel("Count", color="#c8e6c9", fontsize=9)
-        ax4.tick_params(colors="#c8e6c9")
-        for spine in ax4.spines.values():
-            spine.set_edgecolor("#2d4a2f")
-        for bar, val in zip(bars, sev_counts.values()):
-            ax4.text(
-                bar.get_width() + 0.05,
-                bar.get_y() + bar.get_height() / 2,
-                str(val),
-                va="center",
-                color="white",
-                fontsize=10,
-            )
-        st.pyplot(fig4)
-        plt.close(fig4)
     else:
         st.info("No scan data yet. Upload and save leaf images from the Home tab.")
 
@@ -916,7 +756,7 @@ elif st.session_state.page == "About":
         ℹ️ About AgroVision AI
     </div>
     <div style="font-size:1rem; color:#76d1ff; margin-top:0.25rem;">
-        Smart plant leaf analysis system
+        Green, Yellow, Brown ratio analysis
     </div>
 </div>
 """,
@@ -928,14 +768,13 @@ elif st.session_state.page == "About":
     with left_col:
         st.markdown(
             """
-<div class='about-card'>
-    <h4 style='margin-top:0;color:#76d1ff'>🌿 What It Does</h4>
-    AgroVision AI analyses leaf images using colour-ratio intelligence to detect plant health.
-    It provides a clear health result, confidence score, pie chart analysis, and downloadable reports.
-</div>
-<div class='about-card'>
-    <h4 style='margin-top:0;color:#76d1ff'>🚀 Features</h4>
-    • Leaf health detection<br>
+<div class="about-card">
+    <h4 style="margin-top:0;color:#76d1ff">🌿 What It Does</h4>
+    AgroVision AI analyses leaf images using green, yellow and brown ratio checks.
+    </div>
+<div class="about-card">
+    <h4 style="margin-top:0;color:#76d1ff">🚀 Features</h4>
+    • Leaf ratio detection<br>
     • Confidence-based prediction<br>
     • Visual pie chart analysis<br>
     • History tracking<br>
@@ -948,17 +787,17 @@ elif st.session_state.page == "About":
     with right_col:
         st.markdown(
             """
-<div class='about-card'>
-    <h4 style='margin-top:0;color:#76d1ff'>🔬 How It Works</h4>
+<div class="about-card">
+    <h4 style="margin-top:0;color:#76d1ff">🔬 How It Works</h4>
     The model checks colour ratios from the uploaded leaf image and uses them to determine
-    whether the leaf is healthy, diseased, or stressed.
+    the result.
 </div>
-<div class='about-card'>
-    <h4 style='margin-top:0;color:#76d1ff'>🔮 Future Scope</h4>
-    • Deep learning based disease detection<br>
-    • Weather and soil integration<br>
+<div class="about-card">
+    <h4 style="margin-top:0;color:#76d1ff">🔮 Future Scope</h4>
+    • Better ratio analysis<br>
+    • More leaf samples<br>
     • Mobile app support<br>
-    • Crop-specific disease classification
+    • Crop-specific scanning
 </div>
 """,
             unsafe_allow_html=True,

@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="AgroVision AI",
     page_icon="🌿",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 # ─────────────────────────────────────────
@@ -212,21 +212,78 @@ section[data-testid="stSidebar"] * {
 # ─────────────────────────────────────────
 if "history" not in st.session_state:
     st.session_state.history = []
-
+if "saved_hashes" not in st.session_state:
+    st.session_state.saved_hashes = []
+if "save_nonce" not in st.session_state:
+    st.session_state.save_nonce = 0
+if "flash_message" not in st.session_state:
+    st.session_state.flash_message = ""
 if "page" not in st.session_state:
     st.session_state.page = "Home"
 
-if "result_data" not in st.session_state:
-    st.session_state.result_data = None
-
-if "input_key" not in st.session_state:
-    st.session_state.input_key = 0
-
-if "flash_message" not in st.session_state:
-    st.session_state.flash_message = ""
-
-if "saved_hashes" not in st.session_state:
-    st.session_state.saved_hashes = []
+# ─────────────────────────────────────────
+# TREATMENT DATABASE
+# ─────────────────────────────────────────
+TREATMENTS = {
+    "Healthy Leaf": {
+        "card_class": "",
+        "icon": "✅",
+        "title": "Plant is healthy — maintain current care",
+        "tips": [
+            "Continue the regular watering schedule",
+            "Apply balanced NPK fertiliser monthly",
+            "Monitor for early signs of pests or discolouration",
+            "Ensure adequate sunlight and airflow between plants",
+        ],
+    },
+    "Mostly Healthy": {
+        "card_class": "",
+        "icon": "🟢",
+        "title": "Mostly healthy — only minor stress detected",
+        "tips": [
+            "Inspect the plant again in 3–5 days",
+            "Check if the leaf is getting too much direct sun",
+            "Avoid overwatering and keep soil moisture stable",
+            "Remove only clearly damaged parts if needed",
+        ],
+    },
+    "Disease Detected": {
+        "card_class": "danger",
+        "icon": "🦠",
+        "title": "Disease treatment recommended",
+        "tips": [
+            "Remove and dispose of heavily infected leaves immediately",
+            "Apply a copper-based or neem oil fungicide/bactericide spray",
+            "Avoid overhead watering — water at the base only",
+            "Increase plant spacing to improve air circulation",
+            "Re-inspect after 7 days and repeat treatment if needed",
+        ],
+    },
+    "Nutrient Deficiency": {
+        "card_class": "warn",
+        "icon": "🌱",
+        "title": "Nutrient correction needed",
+        "tips": [
+            "Test soil pH — ideal range is 6.0–7.0 for most crops",
+            "Apply a micronutrient-rich foliar spray (Fe, Mg, Zn)",
+            "Add organic compost to improve soil structure and retention",
+            "Consider a slow-release fertiliser with balanced N-P-K",
+            "Avoid over-watering which leaches nutrients from the soil",
+        ],
+    },
+    "Mixed Stress": {
+        "card_class": "warn",
+        "icon": "⚠️",
+        "title": "Mixed stress detected — monitor carefully",
+        "tips": [
+            "Check watering consistency first",
+            "Inspect for pests, fungal spots, and leaf curling",
+            "Reduce heat stress with partial shade if needed",
+            "Re-scan the leaf under natural light for confirmation",
+            "If symptoms spread, isolate the plant from others",
+        ],
+    },
+}
 
 # ─────────────────────────────────────────
 # HELPERS
@@ -239,8 +296,7 @@ def image_to_bytes(img: Image.Image):
 
 def is_leaf(image: Image.Image) -> bool:
     img = np.array(image.convert("RGB")).astype(np.float32)
-    rgb_norm = img / 255.0
-    hsv = rgb_to_hsv(rgb_norm)
+    hsv = rgb_to_hsv(img / 255.0)
 
     h = hsv[:, :, 0] * 360.0
     s = hsv[:, :, 1]
@@ -498,7 +554,6 @@ st.markdown(
 # NAVIGATION
 # ─────────────────────────────────────────
 st.sidebar.markdown("### 🌿 AgroVision AI")
-
 if st.sidebar.button("🏠 Home"):
     st.session_state.page = "Home"
 if st.sidebar.button("📁 History"):
@@ -542,7 +597,7 @@ if st.session_state.page == "Home":
     if image and uploaded_bytes:
         if not is_leaf(image):
             st.image(image, use_container_width=True, caption="Uploaded Image")
-            st.write("Please upload a leaf image.")
+            st.write("Please upload a valid leaf image.")
             st.stop()
 
         file_hash = hashlib.sha256(uploaded_bytes).hexdigest()
@@ -557,7 +612,6 @@ if st.session_state.page == "Home":
 
         with col_result:
             st.markdown("##### 🔬 Analysis Result")
-
             badge_class = "good-badge" if result == "GOOD" else "bad-badge"
             icon = "✅" if result == "GOOD" else "⚠️"
             st.markdown(
@@ -620,12 +674,11 @@ if st.session_state.page == "Home":
         leaf_name = st.text_input(
             "Leaf scan name",
             placeholder="e.g. Field-A Sample 1",
-            key=f"leaf_name_{file_hash}_{st.session_state.input_key}",
+            key=f"leaf_name_{file_hash}_{st.session_state.save_nonce}",
         )
 
         if st.button("💾 Save to History"):
             save_name = leaf_name.strip() if leaf_name.strip() else f"Leaf Scan {len(st.session_state.history)+1}"
-
             if file_hash in st.session_state.saved_hashes:
                 st.write("This leaf image is already saved in history.")
             else:
@@ -636,9 +689,6 @@ if st.session_state.page == "Home":
                         "confidence": confidence,
                         "condition": condition,
                         "severity": severity_label,
-                        "green": pie_values[0],
-                        "yellow": pie_values[1],
-                        "brown": pie_values[2],
                         "pie_values": pie_values,
                         "image_bytes": uploaded_bytes,
                         "timestamp": datetime.now().strftime("%d %b %Y, %I:%M %p"),
@@ -646,9 +696,8 @@ if st.session_state.page == "Home":
                     }
                 )
                 st.session_state.saved_hashes.append(file_hash)
-                st.session_state.input_key += 1
+                st.session_state.save_nonce += 1
                 st.session_state.flash_message = f"✅ '{save_name}' saved to history!"
-                st.session_state.result_data = None
                 st.rerun()
     else:
         st.info("⬆️ Upload an image above to scan a leaf.")
@@ -685,8 +734,6 @@ elif st.session_state.page == "History":
             sev = item.get("severity", "")
             ts = item.get("timestamp", "—")
             sev_class = "sev-low" if "Low" in sev else ("sev-medium" if "Medium" in sev else "sev-high")
-            t_data = treatment_for_condition(item.get("condition", "Mixed Stress"))
-
             st.markdown(
                 f"""
 <div class='history-card'>
@@ -762,19 +809,19 @@ elif st.session_state.page == "Analytics":
 
         m1, m2, m3, m4 = st.columns(4)
         m1.markdown(
-            f"<div class='metric-box'><div class='metric-num'>{total}</div><div class='metric-label'>Total Scans</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>Total Scans</div><div class='soft-value'>{total}</div></div>",
             unsafe_allow_html=True,
         )
         m2.markdown(
-            f"<div class='metric-box'><div class='metric-num' style='color:#a5d6a7'>{good_count}</div><div class='metric-label'>Healthy</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>Healthy</div><div class='soft-value' style='color:#99f6e4'>{good_count}</div></div>",
             unsafe_allow_html=True,
         )
         m3.markdown(
-            f"<div class='metric-box'><div class='metric-num' style='color:#ef9a9a'>{bad_count}</div><div class='metric-label'>Diseased / Deficient</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>Diseased / Deficient</div><div class='soft-value' style='color:#fecaca'>{bad_count}</div></div>",
             unsafe_allow_html=True,
         )
         m4.markdown(
-            f"<div class='metric-box'><div class='metric-num' style='color:#ef5350'>{high_risk}</div><div class='metric-label'>High Risk</div></div>",
+            f"<div class='stat-card'><div class='soft-label'>High Risk</div><div class='soft-value' style='color:#ef5350'>{high_risk}</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -783,18 +830,11 @@ elif st.session_state.page == "Analytics":
 
         with col_pie:
             st.markdown("##### Health Distribution")
-            fig2, ax2 = plt.subplots(figsize=(4, 4), facecolor="#0f1a10")
-            ax2.set_facecolor("#0f1a10")
-            ax2.pie(
+            fig2 = make_pie_figure(
                 [good_count, bad_count],
-                labels=["GOOD", "BAD"],
-                autopct="%1.1f%%",
-                colors=["#4caf50", "#ef5350"],
-                startangle=90,
-                wedgeprops={"edgecolor": "#0f1a10", "linewidth": 2},
+                ["#14b8a6", "#fb7185"],
+                ["GOOD", "BAD"],
             )
-            for tx in ax2.texts:
-                tx.set_color("#c8e6c9")
             st.pyplot(fig2)
             plt.close(fig2)
 
@@ -805,26 +845,26 @@ elif st.session_state.page == "Analytics":
                 for i, entry in enumerate(st.session_state.history)
             ]
             confidences = [entry["confidence"] for entry in st.session_state.history]
-            bar_colors = ["#4caf50" if entry["result"] == "GOOD" else "#ef5350" for entry in st.session_state.history]
+            bar_colors = ["#14b8a6" if entry["result"] == "GOOD" else "#fb7185" for entry in st.session_state.history]
 
             fig3, ax3 = plt.subplots(figsize=(5, 4), facecolor="#0f1a10")
             ax3.set_facecolor("#1a2b1c")
             ax3.bar(range(len(names)), confidences, color=bar_colors, edgecolor="#0f1a10")
             ax3.set_xticks(range(len(names)))
-            ax3.set_xticklabels(names, rotation=30, ha="right", color="#c8e6c9", fontsize=9)
-            ax3.set_ylabel("Confidence (%)", color="#c8e6c9", fontsize=9)
+            ax3.set_xticklabels(names, rotation=30, ha="right", color="#d5e3f0", fontsize=9)
+            ax3.set_ylabel("Confidence (%)", color="#d5e3f0", fontsize=9)
             ax3.set_ylim(0, 100)
-            ax3.tick_params(colors="#c8e6c9")
+            ax3.tick_params(colors="#d5e3f0")
             for spine in ax3.spines.values():
-                spine.set_edgecolor("#2d4a2f")
+                spine.set_edgecolor("#23405c")
             ax3.legend(
                 handles=[
-                    mpatches.Patch(color="#4caf50", label="GOOD"),
-                    mpatches.Patch(color="#ef5350", label="BAD"),
+                    mpatches.Patch(color="#14b8a6", label="GOOD"),
+                    mpatches.Patch(color="#fb7185", label="BAD"),
                 ],
-                facecolor="#1a2b1c",
+                facecolor="#0c1722",
                 labelcolor="white",
-                edgecolor="#2d4a2f",
+                edgecolor="#23405c",
             )
             st.pyplot(fig3)
             plt.close(fig3)
@@ -863,7 +903,7 @@ elif st.session_state.page == "Analytics":
         st.pyplot(fig4)
         plt.close(fig4)
     else:
-        st.info("No scan data yet. Upload and save leaf images from the Dashboard tab.")
+        st.info("No scan data yet. Upload and save leaf images from the Home tab.")
 
 # ─────────────────────────────────────────
 # ABOUT
